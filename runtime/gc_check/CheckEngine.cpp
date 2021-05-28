@@ -460,6 +460,13 @@ GC_CheckEngine::checkJ9Object(J9JavaVM *javaVM, J9Object* objectPtr, J9MM_Iterat
 		}
 	}
 
+#if defined(J9VM_ARCH_X86)
+	if (extensions->objectModel.isIndexable(objectPtr)) {
+		/* Check that the indexable object has the correct data address pointer */
+		extensions->indexableObjectModel.AssertCorrectDataAddrForIndexableObject((J9IndexableObject*)objectPtr);
+	}
+#endif /*(J9VM_ARCH_X86) */
+
 	if (checkFlags & J9MODRON_GCCHK_VERIFY_RANGE) {
 		UDATA regionEnd = ((UDATA)regionDesc->regionStart) + regionDesc->regionSize;
 		UDATA delta = regionEnd - (UDATA)objectPtr;

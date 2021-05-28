@@ -932,6 +932,23 @@ public:
 	void AssertArrayPtrIsIndexable(J9IndexableObject *arrayPtr);
 
 	/**
+	 * Asserts that the dataAddr field of the indexable object is correct.
+	 *
+	 * @param arrayPtr      Pointer to the indexable object
+	 * @param dataAddr      Pointer to indexable object data address
+	 */
+	void AssertCorrectDataAddrContiguous(J9IndexableObject *arrayPtr, void *dataAddr);
+	
+
+	/**
+	 * Asserts that an indexable object pointer is indeed an indexable object
+	 *
+	 * @param arrayPtr      Pointer to the indexable object
+	 * @param dataAddr      Pointer to indexable object data address
+	 */
+	void AssertCorrectDataAddrDiscontiguous(J9IndexableObject *arrayPtr, void *dataAddr);
+
+	/**
 	 * Returns data pointer associated with a contiguous Indexable object.
 	 * Data pointer will always be pointing at the arraylet data. In this
 	 * case the data pointer will be pointing to address immediately after
@@ -992,6 +1009,29 @@ public:
 			: getDataAddrForContiguous(arrayPtr);
 	}
 #endif /* J9VM_ENV_DATA64 */
+
+	/**
+	 * Asserts that the dataAddr field of the indexable object is correct.
+	 *
+	 * @param arrayPtr      Pointer to the indexable object
+	 */
+	MMINLINE void
+	AssertCorrectDataAddrForIndexableObject(J9IndexableObject *arrayPtr)
+	{
+#if defined(J9VM_ENV_DATA64)
+		void *dataAddr;
+		ArrayLayout layout = getArrayLayout(arrayPtr);
+		bool isDiscontiguous = (layout != InlineContiguous);
+
+		if (isDiscontiguous) {
+			dataAddr = getDataAddrForDiscontiguous(arrayPtr);
+			AssertCorrectDataAddrDiscontiguous(arrayPtr, dataAddr);
+		} else {
+			dataAddr = getDataAddrForContiguous(arrayPtr);
+			AssertCorrectDataAddrContiguous(arrayPtr, dataAddr);
+		}
+#endif /* J9VM_ENV_DATA64 */
+	}
 
 	/**
 	 * External fixup dataAddr API to update pointer of indexable objects.
