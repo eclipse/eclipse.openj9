@@ -158,16 +158,4 @@ GC_ArrayletObjectModel::AssertArrayPtrIsIndexable(J9IndexableObject *arrayPtr)
 	MM_GCExtensionsBase* extensions = MM_GCExtensionsBase::getExtensions(_omrVM);
 	Assert_MM_true(extensions->objectModel.isIndexable(J9GC_J9OBJECT_CLAZZ(arrayPtr, this)));
 }
-
-void
-GC_ArrayletObjectModel::AssertCorrectDataAddrContiguous(J9IndexableObject *arrayPtr, void *dataAddr)
-{
-	Assert_MM_true(dataAddr == ((void *)((uintptr_t)arrayPtr + contiguousHeaderSize())));
-}
-
-void
-GC_ArrayletObjectModel::AssertCorrectDataAddrDiscontiguous(J9IndexableObject *arrayPtr, void *dataAddr)
-{
-	Assert_MM_true(dataAddr == ((void *)((uintptr_t)arrayPtr + discontiguousHeaderSize())));	
-}
 #endif /* defined(J9VM_ENV_DATA64) */

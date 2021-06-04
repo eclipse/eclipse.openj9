@@ -463,7 +463,15 @@ GC_CheckEngine::checkJ9Object(J9JavaVM *javaVM, J9Object* objectPtr, J9MM_Iterat
 #if defined(J9VM_ARCH_X86)
 	if (extensions->objectModel.isIndexable(objectPtr)) {
 		/* Check that the indexable object has the correct data address pointer */
-		extensions->indexableObjectModel.AssertCorrectDataAddrForIndexableObject((J9IndexableObject*)objectPtr);
+		if (extensions->indexableObjectModel.isInlineContiguousArraylet((J9IndexableObject*)objectPtr)) {
+			if(extensions->indexableObjectModel.isCorrectDataAddrForContiguousArraylet((J9IndexableObject*)objectPtr)) {
+				return J9MODRON_GCCHK_RC_INVALID_CONTIGUOUS_DATA_ADDRESS;
+			}
+		} else {
+			if(extensions->indexableObjectModel.isCorrectDataAddrForDiscontiguousArraylet((J9IndexableObject*)objectPtr)) {
+				return J9MODRON_GCCHK_RC_INVALID_DISCONTIGUOUS_DATA_ADDRESS;
+			}
+		}
 	}
 #endif /*(J9VM_ARCH_X86) */
 
