@@ -303,6 +303,11 @@ top:
 							miscFlags |= J9MODRON_GCCHK_MISC_MIDSCAVENGE;
 							continue;
 						}
+
+						if (try_scan(&scan_start, "indexabledataaddress")) {
+							miscFlags |= J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS;
+							continue;
+						}
 #endif /* J9VM_GC_MODRON_SCAVENGER  || defined(J9VM_GC_VLHGC) */
 
 						if (try_scan(&scan_start, "abort")) {
