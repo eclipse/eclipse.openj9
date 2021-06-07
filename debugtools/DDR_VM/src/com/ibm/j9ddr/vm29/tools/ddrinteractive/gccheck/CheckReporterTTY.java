@@ -79,7 +79,7 @@ public class CheckReporterTTY extends CheckReporter
 		"class ramStatics must be NULL for hot swapped class", /* J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_POINTS_TO_STATICS (31) */
 		"class ramStatics field points to object but out of GC scan range", /* J9MODRON_GCCHK_RC_CLASS_STATICS_REFERENCE_IS_NOT_IN_SCANNING_RANGE (32)*/
 		"class ramStatics number of references not equal specified in ROM class", /* J9MODRON_GCCHK_RC_CLASS_STATICS_WRONG_NUMBER_OF_REFERENCES (33) */	
-		"obsolete code 34", /* obsolete code (34) */
+		"invalid indexable data address", /* J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS (34) */
 		"obsolete code 35", /* obsolete code (35) */
 		"obsolete code 36", /* obsolete code (36) */
 		"obsolete code 37", /* obsolete code (37) */

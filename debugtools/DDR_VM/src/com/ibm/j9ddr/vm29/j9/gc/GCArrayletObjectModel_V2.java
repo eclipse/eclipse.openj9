@@ -23,6 +23,8 @@ package com.ibm.j9ddr.vm29.j9.gc;
 
 import com.ibm.j9ddr.CorruptDataException;
 import com.ibm.j9ddr.vm29.pointer.generated.J9IndexableObjectPointer;
+import com.ibm.j9ddr.vm29.pointer.helper.J9IndexableObjectHelper;
+import com.ibm.j9ddr.vm29.pointer.VoidPointer;
 import com.ibm.j9ddr.vm29.types.UDATA;
 
 class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
@@ -66,5 +68,30 @@ class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
 		UDATA externalArrayletSize = externalArrayletsSize(arrayPtr);
 		UDATA totalFootprint = spineSize.add(externalArrayletSize);
 		return totalFootprint;
+	}
+
+	@Override
+	public VoidPointer getDataPointerForContiguous(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		return super.getDataPointerForContiguous(arrayPtr);
+	}
+
+	public VoidPointer getDataPointerForDiscontiguous(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		/* TODO */
+		return VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize()));
+	}
+
+	@Override
+	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		boolean isValid = true;
+		if(super.isInlineContiguousArraylet(arrayPtr)) {
+			isValid = (getDataPointerForContiguous(arrayPtr) == VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
+		} else {
+			isValid = (getDataPointerForDiscontiguous(arrayPtr) == VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
+		}
+		
+		return isValid;
 	}
 }

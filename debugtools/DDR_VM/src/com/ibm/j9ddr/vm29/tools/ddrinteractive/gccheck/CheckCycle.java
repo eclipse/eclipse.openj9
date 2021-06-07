@@ -343,6 +343,11 @@ class CheckCycle
 							miscFlags |= J9MODRON_GCCHK_MISC_MIDSCAVENGE;
 							continue;
 						}
+
+						if(miscOption.equals("indexabledataaddress")) {
+							miscFlags |= J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS;
+							continue;
+						}
 					}	
 	
 					/* Most of these options are specific to a running process */					

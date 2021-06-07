@@ -153,6 +153,15 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 	{
 		return ObjectModel.getElementAddress(objPointer, index, dataSize);
 	}
+
+	/**
+	 * @param objPointer array object who's data address validity we are checking
+	 * @throws CorruptDataException 
+	 */
+	public static VoidPointer isValidDataAddressPointer(J9IndexableObjectPointer objPointer) throws CorruptDataException
+	{
+		return ObjectModel.isValidDataAddressPointer(objPointer);
+	}
 	
 	/**
 	 *  @param objPointer array object who's elements we are outputting to dst

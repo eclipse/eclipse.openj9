@@ -459,5 +459,14 @@ public final class ObjectModel
 			return false;
 		}
 	}
+
+	/**
+	 * @param arrayPtr array object who's data address validity we are checking
+	 * @throws CorruptDataException 
+	 */
+	public static boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		return gcObjectModel.isValidDataAddressPointer(arrayPtr);
+	}
 }
 

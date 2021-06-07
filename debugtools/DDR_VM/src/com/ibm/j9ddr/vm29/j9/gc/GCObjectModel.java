@@ -296,4 +296,13 @@ public abstract class GCObjectModel extends GCBase
 	 */
 	public abstract VoidPointer getElementAddress(J9IndexableObjectPointer indexableObjectPointer, int elementIndex, int elementSize) throws CorruptDataException;
 
+	
+	/**
+	 * @param arrayPtr array object who's data address validity we are checking
+	 * @throws CorruptDataException 
+	 */
+	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		return indexableObjectModel.isValidDataAddressPointer(arrayPtr);
+	}
 }

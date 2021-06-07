@@ -287,6 +287,9 @@ public abstract class GCArrayletObjectModelBase extends GCArrayObjectModel
 		return VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize()));
 	}
 
+
+	public abstract boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
+
 	@Override
 	public UDATA getHashcodeOffset(J9IndexableObjectPointer array) throws CorruptDataException
 	{
