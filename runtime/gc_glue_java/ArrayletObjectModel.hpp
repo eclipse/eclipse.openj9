@@ -943,7 +943,6 @@ public:
 		return (dataAddr == ((void *)((uintptr_t)arrayPtr + contiguousHeaderSize())));
 	}
 	
-
 	/**
 	 * Asserts that an indexable object pointer is indeed an indexable object
 	 *
@@ -1016,9 +1015,6 @@ public:
 			? getDataAddrForDiscontiguous(arrayPtr)
 			: getDataAddrForContiguous(arrayPtr);
 	}
-
-
-
 #endif /* J9VM_ENV_DATA64 */
 
 	/**

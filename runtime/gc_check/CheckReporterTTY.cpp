@@ -90,8 +90,7 @@ const static char *errorTypes[] = {
 	"class ramStatics must be NULL for hot swapped class", /* J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_POINTS_TO_STATICS (31) */
 	"class ramStatics field points to object but out of GC scan range", /* J9MODRON_GCCHK_RC_CLASS_STATICS_REFERENCE_IS_NOT_IN_SCANNING_RANGE (32) */
 	"class ramStatics number of references not equal specified in ROM class", /* J9MODRON_GCCHK_RC_CLASS_STATICS_WRONG_NUMBER_OF_REFERENCES (33) */
-	"invalid contiguous data address", /* J9MODRON_GCCHK_RC_INVALID_CONTIGUOUS_DATA_ADDRESS (34) */
-	"invalid discontiguous data address", /* J9MODRON_GCCHK_RC_INVALID_DISCONTIGUOUS_DATA_ADDRESS (35) */
+	"invalid indexable data address", /* J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS (34) */
 	"class object not a subclass of java.util.concurrent.locks.AbstractOwnableSynchronizer", /* J9MODRON_GCCHK_RC_OWNABLE_SYNCHRONIZER_INVALID_CLASS (38) */
 	"array class can not be hot swapped", /* J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_FOR_ARRAY (39) */
 	"replaced class has no hot swapped out flag set", /* J9MODRON_GCCHK_RC_REPLACED_CLASS_HAS_NO_HOTSWAP_FLAG (40) */
