@@ -104,7 +104,7 @@ class GCArrayletObjectModel_V1 extends GCArrayletObjectModelBase
 	}
 
 	@Override
-	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
 		return true;
 	}

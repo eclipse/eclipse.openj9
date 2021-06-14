@@ -158,9 +158,9 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 	 * @param objPointer array object who's data address validity we are checking
 	 * @throws CorruptDataException 
 	 */
-	public static boolean isValidDataAddressPointer(J9IndexableObjectPointer objPointer) throws CorruptDataException
+	public static boolean isCorrectDataPointer(J9IndexableObjectPointer objPointer) throws CorruptDataException
 	{
-		return ObjectModel.isValidDataAddressPointer(objPointer);
+		return ObjectModel.isCorrectDataPointer(objPointer);
 	}
 	
 	/**

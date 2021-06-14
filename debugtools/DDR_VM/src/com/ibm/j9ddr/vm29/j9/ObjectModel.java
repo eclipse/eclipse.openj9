@@ -464,9 +464,9 @@ public final class ObjectModel
 	 * @param arrayPtr array object who's data address validity we are checking
 	 * @throws CorruptDataException 
 	 */
-	public static boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	public static boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
-		return gcObjectModel.isValidDataAddressPointer(arrayPtr);
+		return gcObjectModel.isCorrectDataPointer(arrayPtr);
 	}
 }
 

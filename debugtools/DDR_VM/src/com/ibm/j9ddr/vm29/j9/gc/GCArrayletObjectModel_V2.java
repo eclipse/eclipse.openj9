@@ -78,12 +78,11 @@ class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
 
 	public VoidPointer getDataPointerForDiscontiguous(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
-		/* TODO */
 		return VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize()));
 	}
 
 	@Override
-	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
 		if(super.isInlineContiguousArraylet(arrayPtr)) {
 			return getDataPointerForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));

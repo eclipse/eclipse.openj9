@@ -288,7 +288,7 @@ public abstract class GCArrayletObjectModelBase extends GCArrayObjectModel
 	}
 
 
-	public abstract boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
+	public abstract boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
 
 	@Override
 	public UDATA getHashcodeOffset(J9IndexableObjectPointer array) throws CorruptDataException

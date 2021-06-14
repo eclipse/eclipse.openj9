@@ -131,7 +131,7 @@ abstract class GCArrayObjectModel extends GCBase
 	 * @param arrayPtr array object who's data address validity we are checking
 	 * @throws CorruptDataException 
 	 */
-	public abstract boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
+	public abstract boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
 	
 	/**
 	 * Returns the address of first arraylet leaf slot in the spine

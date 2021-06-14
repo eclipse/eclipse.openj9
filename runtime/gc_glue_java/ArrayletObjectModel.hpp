@@ -1015,6 +1015,22 @@ public:
 			? getDataAddrForDiscontiguous(arrayPtr)
 			: getDataAddrForContiguous(arrayPtr);
 	}
+
+	/**
+	 * Asserts that the dataAddr field of the indexable object is correct.
+	 *
+	 * @param arrayPtr      Pointer to the indexable object
+	 */
+	MMINLINE bool
+	isCorrectDataAddr(J9IndexableObject *arrayPtr)
+	{
+		ArrayLayout layout = getArrayLayout(arrayPtr);
+		bool isDiscontiguous = (layout != InlineContiguous);
+
+		return isDiscontiguous
+			? isCorrectDataAddrForDiscontiguousArraylet(arrayPtr)
+			: isCorrectDataAddrForContiguousArraylet(arrayPtr);
+	}
 #endif /* J9VM_ENV_DATA64 */
 
 	/**

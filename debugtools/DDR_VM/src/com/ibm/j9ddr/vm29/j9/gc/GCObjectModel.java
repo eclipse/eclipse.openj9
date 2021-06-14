@@ -301,8 +301,8 @@ public abstract class GCObjectModel extends GCBase
 	 * @param arrayPtr array object who's data address validity we are checking
 	 * @throws CorruptDataException 
 	 */
-	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
-		return indexableObjectModel.isValidDataAddressPointer(arrayPtr);
+		return indexableObjectModel.isCorrectDataPointer(arrayPtr);
 	}
 }

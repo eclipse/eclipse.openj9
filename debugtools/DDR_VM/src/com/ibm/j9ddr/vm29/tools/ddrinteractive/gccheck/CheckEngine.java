@@ -1197,7 +1197,7 @@ class CheckEngine
 
 		if (isIndexableDataAddressFlagSet() && ObjectModel.isIndexable(object)) {
 			J9IndexableObjectPointer array = J9IndexableObjectPointer.cast(object);
-			if(!J9IndexableObjectHelper.isValidDataAddressPointer(array)) {
+			if(!J9IndexableObjectHelper.isCorrectDataPointer(array)) {
 				return J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS;
 			}
 		}
