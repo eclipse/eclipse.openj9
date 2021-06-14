@@ -85,13 +85,10 @@ class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
 	@Override
 	public boolean isValidDataAddressPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
 	{
-		boolean isValid = true;
 		if(super.isInlineContiguousArraylet(arrayPtr)) {
-			isValid = (getDataPointerForContiguous(arrayPtr) == VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
+			return getDataPointerForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
 		} else {
-			isValid = (getDataPointerForDiscontiguous(arrayPtr) == VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
+			return getDataPointerForDiscontiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
 		}
-		
-		return isValid;
 	}
 }
