@@ -465,7 +465,7 @@ GC_CheckEngine::checkJ9Object(J9JavaVM *javaVM, J9Object* objectPtr, J9MM_Iterat
 #if defined(J9VM_ARCH_X86)
 	if ((checkFlags & J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS) && extensions->objectModel.isIndexable(objectPtr)) {
 		/* Check that the indexable object has the correct data address pointer */
-		if (!extensions->indexableObjectModel.isCorrectDataAddr((J9IndexableObject*)objectPtr)) {
+		if (false == extensions->indexableObjectModel.isCorrectDataAddr((J9IndexableObject*)objectPtr)) {
 			return J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS;
 		}
 	}
