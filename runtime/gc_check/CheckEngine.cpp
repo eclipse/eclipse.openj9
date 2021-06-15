@@ -37,6 +37,8 @@
 #endif
 
 #include "ArrayletLeafIterator.hpp"
+#include "ArrayletObjectModel.hpp"
+#include "ArrayletObjectModelBase.hpp"
 #include "CheckEngine.hpp"
 #include "Base.hpp"
 #include "CheckBase.hpp"
