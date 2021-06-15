@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2019 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -72,6 +72,8 @@ public:
 
 	/* Inherited from MM_ObjectAccessBarrier */
 	virtual J9Object* referenceGet(J9VMThread *vmThread, J9Object *refObject);
+	virtual void referenceReprocess(J9VMThread *vmThread, J9Object *refObject);
+
 	virtual void jniDeleteGlobalReference(J9VMThread *vmThread, J9Object *reference);
 	virtual void stringConstantEscaped(J9VMThread *vmThread, J9Object *stringConst);
 	virtual void deleteHeapReference(MM_EnvironmentBase *env, J9Object *object);
@@ -151,6 +153,9 @@ public:
 
 	virtual I_32 backwardReferenceArrayCopyIndex(J9VMThread *vmThread, J9IndexableObject *srcObject, J9IndexableObject *destObject, I_32 srcIndex, I_32 destIndex, I_32 lengthInSlots);
 	virtual I_32 forwardReferenceArrayCopyIndex(J9VMThread *vmThread, J9IndexableObject *srcObject, J9IndexableObject *destObject, I_32 srcIndex, I_32 destIndex, I_32 lengthInSlots);
+
+	virtual bool checkStringConstantsLive(J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo);
+	virtual bool checkStringConstantLive(J9JavaVM *javaVM, j9object_t string);
 
 	/**
 	 * Remember objects that are forced onto the finalizable list at shutdown.

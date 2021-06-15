@@ -231,7 +231,7 @@ public:
 	virtual void copyObjectFields(J9VMThread *vmThread, J9Class *valueClass, J9Object *srcObject, UDATA srcOffset, J9Object *destObject, UDATA destOffset);
 	virtual BOOLEAN structuralCompareFlattenedObjects(J9VMThread *vmThread, J9Class *valueClass, j9object_t lhsObject, j9object_t rhsObject, UDATA startOffset);
 	virtual void cloneIndexableObject(J9VMThread *vmThread, J9IndexableObject *srcObject, J9IndexableObject *destObject);
-	virtual J9Object* asConstantPoolObject(J9VMThread *vmThread, J9Object* toConvert, UDATA allocationFlags);
+	virtual J9Object *asConstantPoolObject(J9VMThread *vmThread, J9Object* toConvert, UDATA allocationFlags);
 	virtual void storeObjectToInternalVMSlot(J9VMThread *vmThread, J9Object** destSlot, J9Object *value);
 	virtual J9Object *readObjectFromInternalVMSlot(J9VMThread *vmThread, J9Object **srcSlot);
 	virtual bool compareAndSwapObject(J9VMThread *vmThread, J9Object *destObject, fj9object_t *destAddress, J9Object *compareObject, J9Object *swapObject);
@@ -541,6 +541,16 @@ public:
 		/* no-op default implementation */
 	}
 
+	virtual J9Object *referenceGet(J9VMThread *vmThread, J9Object *refObject)
+	{
+		return J9VMJAVALANGREFREFERENCE_REFERENT_VM(vmThread->javaVM, refObject);
+	}
+
+	virtual void referenceReprocess(J9VMThread *vmThread, J9Object *refObject)
+	{
+		/* no-op default implementation */
+	}
+
 #if defined(J9VM_GC_DYNAMIC_CLASS_UNLOADING)
 	/**
 	 * Check is class alive
@@ -555,6 +565,21 @@ public:
 		return true;
 	}
 #endif /* defined(J9VM_GC_DYNAMIC_CLASS_UNLOADING) */
+
+	virtual bool checkStringConstantsLive(J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo)
+	{
+		return true;
+	}
+
+	virtual bool checkStringConstantLive(J9JavaVM *javaVM, j9object_t string)
+	{
+		return true;
+	}
+
+	virtual void jniDeleteGlobalReference(J9VMThread *vmThread, J9Object *reference)
+	{
+		/* no-op default implementation */
+	}
 
 	MM_ObjectAccessBarrier(MM_EnvironmentBase *env) : MM_BaseVirtual()
 		, _extensions(NULL) 

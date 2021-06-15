@@ -185,10 +185,9 @@ J9MemoryManagerFunctions MemoryManagerFunctions = {
 	j9gc_objaccess_structuralCompareFlattenedObjects,
 	j9gc_objaccess_cloneIndexableObject,
 	j9gc_objaccess_asConstantPoolObject,
-#if defined(J9VM_GC_REALTIME)
 	j9gc_objaccess_referenceGet,
+	j9gc_objaccess_referenceReprocess,
 	j9gc_objaccess_jniDeleteGlobalReference,
-#endif /* J9VM_GC_REALTIME */
 	j9gc_objaccess_compareAndSwapObject,
 	j9gc_objaccess_staticCompareAndSwapObject,
 	j9gc_objaccess_compareAndExchangeObject,
@@ -212,9 +211,6 @@ J9MemoryManagerFunctions MemoryManagerFunctions = {
 	j9mm_iterate_region_objects,
 	j9mm_find_region_for_pointer,
 	j9mm_iterate_object_slots,
-#if defined(J9VM_GC_REALTIME)
-	j9gc_objaccess_checkStringConstantsLive,
-#endif /* J9VM_GC_REALTIME */
 	j9mm_initialize_object_descriptor,
 	j9mm_iterate_all_objects,
 	j9gc_modron_isFeatureSupported,

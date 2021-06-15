@@ -88,6 +88,7 @@ extern J9_CFUNC UDATA isAllocateZeroedTLHPagesEnabled(J9JavaVM *javaVM);
 extern J9_CFUNC void j9gc_objaccess_indexableStoreI16(J9VMThread *vmThread, J9IndexableObject *destObject, I_32 index, I_32 value, UDATA isVolatile);
 extern J9_CFUNC void j9gc_all_object_and_vm_slots_do(J9JavaVM *javaVM, void *function, void *userData, UDATA walkFlags);
 extern J9_CFUNC j9object_t j9gc_objaccess_referenceGet(J9VMThread *vmThread, j9object_t refObject);
+extern J9_CFUNC void j9gc_objaccess_referenceReprocess(J9VMThread *vmThread, j9object_t refObject);
 extern J9_CFUNC UDATA j9gc_ext_check_is_valid_heap_object(J9JavaVM *javaVM, j9object_t ptr, UDATA flags);
 extern J9_CFUNC void J9WriteBarrierClassBatch(J9VMThread *vmThread, J9Class *destinationClazz);
 extern J9_CFUNC UDATA mergeMemorySpaces(J9VMThread *vmThread, void *destinationMemorySpace, void *sourceMemorySpace);
@@ -142,8 +143,8 @@ extern J9_CFUNC UDATA j9gc_objaccess_indexableReadU32(J9VMThread *vmThread, J9In
 extern J9_CFUNC j9objectmonitor_t* j9gc_objaccess_getLockwordAddress(J9VMThread *vmThread, j9object_t object);
 extern J9_CFUNC j9object_t j9gc_objaccess_readObjectFromInternalVMSlot(J9VMThread *vmThread, J9JavaVM *vm, J9Object **srcSlot);
 extern J9_CFUNC U_64 j9gc_objaccess_mixedObjectReadU64(J9VMThread *vmThread, j9object_t srcObject, UDATA offset, UDATA isVolatile);
-extern J9_CFUNC UDATA j9gc_objaccess_checkStringConstantsLive(J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo);
-extern J9_CFUNC BOOLEAN j9gc_objaccess_checkStringConstantLive(J9JavaVM *javaVM, j9object_t string);
+extern J9_CFUNC BOOLEAN checkStringConstantsLive(J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo);
+extern J9_CFUNC BOOLEAN checkStringConstantLive(J9JavaVM *javaVM, j9object_t string);
 extern J9_CFUNC UDATA j9gc_objaccess_checkClassLive(J9JavaVM *javaVM, J9Class *classPtr);
 extern J9_CFUNC UDATA j9gc_modron_getWriteBarrierType(J9JavaVM *javaVM);
 extern J9_CFUNC UDATA j9gc_modron_getReadBarrierType(J9JavaVM *javaVM);
@@ -276,7 +277,7 @@ void j9mm_get_guaranteed_nursery_range(J9JavaVM* javaVM, void** start, void** en
 extern J9_CFUNC j9object_t j9gc_createJavaLangString(J9VMThread *vmThread, U_8 *data, UDATA length, UDATA stringFlags);
 extern J9_CFUNC j9object_t j9gc_internString(J9VMThread *vmThread, j9object_t sourceString);
 extern UDATA j9gc_stringHashFn (void *key, void *userData);
-extern UDATA j9gc_stringHashEqualFn (void *leftKey, void *rightKey, void *userData);
+extern BOOLEAN j9gc_stringHashEqualFn (void *leftKey, void *rightKey, void *userData);
 
 /* modronapi.cpp */
 extern J9_CFUNC UDATA j9gc_get_bytes_allocated_by_thread(J9VMThread* vmThread);

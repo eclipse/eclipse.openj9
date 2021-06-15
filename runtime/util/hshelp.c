@@ -2178,14 +2178,8 @@ fixDirectHandles(J9VMThread * currentThread, J9HashTable * classHashTable, J9Has
 			if (NULL != mhCache) {
 				/* Walk the linked list of WeakReferenceNodes referencing DirectHandles on this class */
 				j9object_t weakRef = J9VMJAVALANGINVOKEMETHODHANDLECACHE_DIRECTHANDLESHEAD_VM(vm, mhCache);
-				BOOLEAN isMetronome = (J9_GC_POLICY_METRONOME == ((OMR_VM *)vm->omrVM)->gcPolicy);
 				while (NULL != weakRef) {
-					j9object_t mhReferent = NULL;
-					if (isMetronome) {
-						mhReferent = vm->memoryManagerFunctions->j9gc_objaccess_referenceGet(currentThread, weakRef);
-					} else {
-						mhReferent = J9VMJAVALANGREFREFERENCE_REFERENT_VM(vm, weakRef);
-					}
+					j9object_t mhReferent = vm->memoryManagerFunctions->j9gc_objaccess_referenceGet(currentThread, weakRef);
 
 					if (NULL != mhReferent) {
 						/* Found live DirectHandle - check whether vmSlot needs to be updated */

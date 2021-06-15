@@ -2,7 +2,7 @@
 
 package com.ibm.oti.vm;
 /*******************************************************************************
- * Copyright (c) 1998, 2020 IBM Corp. and others
+ * Copyright (c) 1998, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -56,7 +56,8 @@ public final class VM {
 	public static final int J9_GC_WRITE_BARRIER_TYPE_CARDMARK;
 	public static final int J9_GC_WRITE_BARRIER_TYPE_CARDMARK_INCREMENTAL;
 	public static final int J9_GC_WRITE_BARRIER_TYPE_CARDMARK_AND_OLDCHECK;
-	public static final int J9_GC_WRITE_BARRIER_TYPE_REALTIME;
+	public static final int J9_GC_WRITE_BARRIER_TYPE_SATB;
+	public static final int J9_GC_WRITE_BARRIER_TYPE_SATB_AND_OLDCHECK;
 
 	public static final int J9_GC_ALLOCATION_TYPE;
 	public static final int J9_GC_ALLOCATION_TYPE_TLH;
@@ -150,7 +151,8 @@ public final class VM {
 		J9_GC_WRITE_BARRIER_TYPE_CARDMARK = 0;
 		J9_GC_WRITE_BARRIER_TYPE_CARDMARK_INCREMENTAL = 0;
 		J9_GC_WRITE_BARRIER_TYPE_CARDMARK_AND_OLDCHECK = 0;
-		J9_GC_WRITE_BARRIER_TYPE_REALTIME = 0;
+		J9_GC_WRITE_BARRIER_TYPE_SATB = 0;
+		J9_GC_WRITE_BARRIER_TYPE_SATB_AND_OLDCHECK = 0;
 
 		J9_GC_ALLOCATION_TYPE = 0;
 		J9_GC_ALLOCATION_TYPE_TLH = 0;

@@ -44,7 +44,7 @@ typedef struct stringTableUTF8Query {
 } stringTableUTF8Query;
 
 static UDATA stringHashFn (void *key, void *userData);
-static UDATA stringHashEqualFn (void *leftKey, void *rightKey, void *userData);
+static BOOLEAN stringHashEqualFn (void *leftKey, void *rightKey, void *userData);
 static IDATA stringComparatorFn(struct J9AVLTree *tree, struct J9AVLTreeNode *leftNode, struct J9AVLTreeNode *rightNode);
 static j9object_t setupCharArray(J9VMThread *vmThread, j9object_t sourceString, j9object_t newString);
 
@@ -209,8 +209,6 @@ static IDATA
 stringComparatorFn(struct J9AVLTree *tree, struct J9AVLTreeNode *leftNode, struct J9AVLTreeNode *rightNode)
 {
 	J9JavaVM *javaVM = (J9JavaVM*) tree->userData;
-	MM_GCExtensionsBase *extensions = MM_GCExtensionsBase::getExtensions(javaVM->omrVM);
-	bool isMetronome = extensions->isMetronomeGC();
 	j9object_t right_s = NULL;
 	U_32 rightLength = 0;
 	j9object_t right_p = NULL;
@@ -266,17 +264,15 @@ stringComparatorFn(struct J9AVLTree *tree, struct J9AVLTreeNode *leftNode, struc
 			rc = 1;
 			goto done;
 		}
-		if (isMetronome) {
-#if defined(J9VM_GC_REALTIME) 
-			if (!j9gc_objaccess_checkStringConstantLive(javaVM, right_s)) {
-				/* Consider dead strings as 'lower than' live strings for the comparator.  
-				 * Also consider UTF8s as alive.
-				 */
-				rc = -1;
-				goto done;
-			}
-#endif
+
+		if (!checkStringConstantLive(javaVM, right_s)) {
+			/* Consider dead strings as 'lower than' live strings for the comparator.
+			 * Also consider UTF8s as alive.
+			 */
+			rc = -1;
+			goto done;
 		}
+
 		/* The strings had the same characters with the same length and both were alive */
 		rc = 0;
 	} else {
@@ -321,22 +317,18 @@ stringComparatorFn(struct J9AVLTree *tree, struct J9AVLTreeNode *leftNode, struc
 			goto done;
 		}
 
-		if (isMetronome) {
-#if defined(J9VM_GC_REALTIME) 
-			/* Consider 'live' strings as 'higher' than their dead counterparts. */
-			BOOLEAN leftStringAlive = j9gc_objaccess_checkStringConstantLive(javaVM, left_s);
-			BOOLEAN rightStringAlive = j9gc_objaccess_checkStringConstantLive(javaVM, right_s);
-			
-			if (leftStringAlive && (!rightStringAlive)) {
-				rc = 1;
-			} else if (rightStringAlive && (!leftStringAlive)) {
-				rc = -1;
-			} else if (rightStringAlive == leftStringAlive) {
-				rc = 0;
-			} else {
-				Assert_MM_unreachable();
-			}
-#endif
+		/* Consider 'live' strings as 'higher' than their dead counterparts. */
+		BOOLEAN leftStringAlive = checkStringConstantLive(javaVM, left_s);
+		BOOLEAN rightStringAlive = checkStringConstantLive(javaVM, right_s);
+
+		if (leftStringAlive && (!rightStringAlive)) {
+			rc = 1;
+		} else if (rightStringAlive && (!leftStringAlive)) {
+			rc = -1;
+		} else if (rightStringAlive == leftStringAlive) {
+			rc = 0;
+		} else {
+			Assert_MM_unreachable();
 		}
 	}
 
@@ -352,11 +344,10 @@ done:
  * @param userData pointer to Java VM Thread
  */
 
-static UDATA
+static BOOLEAN
 stringHashEqualFn(void *leftKey, void *rightKey, void *userData)
 {
 	J9JavaVM *javaVM = (J9JavaVM*) userData;
-	bool isMetronome = MM_GCExtensionsBase::getExtensions(javaVM->omrVM)->isMetronomeGC();
 	j9object_t left_s = NULL;
 	U_32 leftLength = 0;
 	j9object_t left_p = NULL;
@@ -404,15 +395,12 @@ stringHashEqualFn(void *leftKey, void *rightKey, void *userData)
 		if (right_i != rightLength) {
 			return FALSE;
 		}
-		if (isMetronome) {
-#if defined(J9VM_GC_REALTIME) 
-			/*
-			 * Only consider it to be a match if both string constants are live (i.e. they aren't about to be cleared).
-			 * Since the right string is UTF8, re-use the left string as a placeholder
-			 */
-			rc = j9gc_objaccess_checkStringConstantsLive(javaVM, left_s, left_s);
-#endif
-		}
+
+		/*
+		 * Only consider it to be a match if both string constants are live (i.e. they aren't about to be cleared).
+		 * Since the right string is UTF8, re-use the left string as a placeholder
+		 */
+		rc = checkStringConstantsLive(javaVM, left_s, left_s);
 	} else {
 		j9object_t right_s = *(j9object_t *)rightKey;
 		U_32 right_i = 0;
@@ -446,20 +434,17 @@ stringHashEqualFn(void *leftKey, void *rightKey, void *userData)
 				return FALSE;
 			}
 		}
-		if (isMetronome) {
-#if defined(J9VM_GC_REALTIME) 
-			/*
-			 * Only consider it to be a match if both string constants are live (i.e. they aren't about to be cleared).
-			 */
-			rc = j9gc_objaccess_checkStringConstantsLive(javaVM, left_s, right_s);
-#endif
-		}
+
+		/*
+		 * Only consider it to be a match if both string constants are live (i.e. they aren't about to be cleared).
+		 */
+		rc = checkStringConstantsLive(javaVM, left_s, right_s);
 	}
 
 	return rc;
 }
 
-UDATA
+BOOLEAN
 j9gc_stringHashEqualFn(void *leftKey, void *rightKey, void *userData)
 {
 	return stringHashEqualFn(leftKey, rightKey, userData);
@@ -941,7 +926,6 @@ j9gc_internString(J9VMThread *vmThread, j9object_t sourceString)
 	J9InternalVMFunctions * const vmFuncs = vm->internalVMFunctions;
 	MM_GCExtensions *extensions = MM_GCExtensions::getExtensions(vm->omrVM);
 	MM_StringTable *stringTable = extensions->getStringTable();
-	bool isMetronome = extensions->isMetronomeGC();
 	j9object_t internedString = NULL;
 	j9object_t *candidatePtr = NULL;
 	j9object_t candidate = NULL;
@@ -952,21 +936,11 @@ j9gc_internString(J9VMThread *vmThread, j9object_t sourceString)
 	candidate = *candidatePtr;
 
 	if ((NULL != candidate) && stringHashEqualFn(&candidate, &sourceString, vm)) {
-		if (isMetronome) {
-#if defined(J9VM_GC_REALTIME) 
-			/*
-			 * This can only be used if the current candidate pointer is live.
-			 * Pass in candidate twice since we only have one string.
-			 */
-			if (FALSE != j9gc_objaccess_checkStringConstantsLive(vm, candidate, candidate)) {
-				Trc_MM_stringTableCacheHit(vmThread, candidate);
-				return candidate;
-			}
-#else
-			Trc_MM_stringTableCacheHit(vmThread, candidate);
-			return candidate;
-#endif
-		} else {
+		/*
+		 * This can only be used if the current candidate pointer is live.
+		 * Pass in candidate twice since we only have one string.
+		 */
+		if (checkStringConstantsLive(vm, candidate, candidate)) {
 			Trc_MM_stringTableCacheHit(vmThread, candidate);
 			return candidate;
 		}

@@ -4346,10 +4346,9 @@ typedef struct J9MemoryManagerFunctions {
 	BOOLEAN ( *j9gc_objaccess_structuralCompareFlattenedObjects)(struct J9VMThread *vmThread, J9Class *valueClass, j9object_t lhsObject, j9object_t rhsObject, UDATA startOffset) ;
 	void  ( *j9gc_objaccess_cloneIndexableObject)(struct J9VMThread *vmThread, J9IndexableObject *srcObject, J9IndexableObject *destObject) ;
 	j9object_t  ( *j9gc_objaccess_asConstantPoolObject)(struct J9VMThread *vmThread, j9object_t toConvert, UDATA allocationFlags) ;
-#if defined(J9VM_GC_REALTIME)
 	j9object_t  ( *j9gc_objaccess_referenceGet)(struct J9VMThread *vmThread, j9object_t refObject) ;
+	void ( *j9gc_objaccess_referenceReprocess)(struct J9VMThread *vmThread, j9object_t refObject) ;
 	void  ( *j9gc_objaccess_jniDeleteGlobalReference)(struct J9VMThread *vmThread, j9object_t reference) ;
-#endif /* J9VM_GC_REALTIME */
 	UDATA  ( *j9gc_objaccess_compareAndSwapObject)(struct J9VMThread *vmThread, j9object_t destObject, j9object_t*destAddress, j9object_t compareObject, j9object_t swapObject) ;
 	UDATA  ( *j9gc_objaccess_staticCompareAndSwapObject)(struct J9VMThread *vmThread, J9Class *destClass, j9object_t *destAddress, j9object_t compareObject, j9object_t swapObject) ;
 	j9object_t  ( *j9gc_objaccess_compareAndExchangeObject)(struct J9VMThread *vmThread, j9object_t destObject, j9object_t*destAddress, j9object_t compareObject, j9object_t swapObject) ;
@@ -4373,9 +4372,6 @@ typedef struct J9MemoryManagerFunctions {
 	jvmtiIterationControl  ( *j9mm_iterate_region_objects)(struct J9JavaVM *vm, J9PortLibrary *portLibrary, struct J9MM_IterateRegionDescriptor *region, UDATA flags, jvmtiIterationControl (*func)(struct J9JavaVM *vm, struct J9MM_IterateObjectDescriptor *objectDesc, void *userData), void *userData) ;
 	UDATA  ( *j9mm_find_region_for_pointer)(struct J9JavaVM* javaVM, void *pointer, struct J9MM_IterateRegionDescriptor *regionDesc) ;
 	jvmtiIterationControl  ( *j9mm_iterate_object_slots)(struct J9JavaVM *javaVM, J9PortLibrary *portLibrary, struct J9MM_IterateObjectDescriptor *object, UDATA flags, jvmtiIterationControl (*func)(struct J9JavaVM *javaVM, struct J9MM_IterateObjectDescriptor *objectDesc, struct J9MM_IterateObjectRefDescriptor *refDesc, void *userData), void *userData) ;
-#if defined(J9VM_GC_REALTIME)
-	UDATA  ( *j9gc_objaccess_checkStringConstantsLive)(struct J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo) ;
-#endif /* J9VM_GC_REALTIME */
 	void  ( *j9mm_initialize_object_descriptor)(struct J9JavaVM *javaVM, struct J9MM_IterateObjectDescriptor *descriptor, j9object_t object) ;
 	jvmtiIterationControl  ( *j9mm_iterate_all_objects)(struct J9JavaVM *vm, J9PortLibrary *portLibrary, UDATA flags, jvmtiIterationControl (*func)(struct J9JavaVM *vm, struct J9MM_IterateObjectDescriptor *object, void *userData), void *userData) ;
 	UDATA  ( *j9gc_modron_isFeatureSupported)(struct J9JavaVM *javaVM, UDATA feature) ;
@@ -4420,7 +4416,7 @@ typedef struct J9MemoryManagerFunctions {
 	void  ( *j9gc_notifyGCOfClassReplacement)(struct J9VMThread *vmThread, J9Class *originalClass, J9Class *replacementClass, UDATA isFastHCR) ;
 	I_32  ( *j9gc_get_jit_string_dedup_policy)(struct J9JavaVM *javaVM) ;
 	UDATA ( *j9gc_stringHashFn)(void *key, void *userData);
-	UDATA ( *j9gc_stringHashEqualFn)(void *leftKey, void *rightKey, void *userData);
+	BOOLEAN ( *j9gc_stringHashEqualFn)(void *leftKey, void *rightKey, void *userData);
 } J9MemoryManagerFunctions;
 
 typedef struct J9InternalVMFunctions {
