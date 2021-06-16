@@ -937,10 +937,7 @@ void		JNICALL Java_java_lang_invoke_ThunkTuple_registerNatives(JNIEnv *env, jcla
 
 UDATA lookupField(JNIEnv *env, jboolean isStatic, J9Class *j9LookupClass, jstring name, J9UTF8 *sigUTF, J9Class **definingClass, UDATA *romField, jclass accessClass);
 void setClassLoadingConstraintLinkageError(J9VMThread *vmThread, J9Class *methodOrFieldClass, J9UTF8 *signatureUTF8);
-#ifdef J9VM_OPT_PANAMA
-extern J9_CFUNC jlong JNICALL
-Java_java_lang_invoke_MethodHandles_findNativeAddress(JNIEnv *env, jclass jlClass, jstring methodName);
-#endif
+
 #if JAVA_SPEC_VERSION >= 15
 extern J9_CFUNC void JNICALL
 Java_java_lang_invoke_MethodHandleNatives_checkClassBytes(JNIEnv *env, jclass jlClass, jbyteArray classRep);

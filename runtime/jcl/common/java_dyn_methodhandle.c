@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -801,27 +801,6 @@ Java_java_lang_invoke_MethodHandle_invoke(JNIEnv *env, jclass ignored, jobject h
 	throwNewUnsupportedOperationException(env);
 	return NULL;
 }
-
-#ifdef J9VM_OPT_PANAMA
-jlong JNICALL
-Java_java_lang_invoke_MethodHandles_findNativeAddress(JNIEnv *env, jclass jlClass, jstring methodName)
-{
-	const char *nativeMethodName = NULL;
-	UDATA handle = 0;
-	jlong func = 0;
-	PORT_ACCESS_FROM_ENV(env);
-
-	nativeMethodName = (*env)->GetStringUTFChars(env, methodName, NULL);
-
-	if(0 == j9sl_open_shared_library(NULL, &handle, FALSE)) {
-		if(0 != j9sl_lookup_name(handle, (char *)nativeMethodName, (UDATA *)&func, "")){
-			func = 0;
-		}
-	}
-
-	return func;
-}
-#endif
 
 void JNICALL
 Java_java_lang_invoke_MutableCallSite_freeGlobalRef(JNIEnv *env, jclass mutableCallSite, jlong bypassOffset)

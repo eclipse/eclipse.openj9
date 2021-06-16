@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2019 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -55,9 +55,6 @@
 #define J9_METHOD_HANDLE_KIND_FILTER_ARGUMENTS 0x1D
 #define J9_METHOD_HANDLE_KIND_VARHANDLE_INVOKE_EXACT 0x1E
 #define J9_METHOD_HANDLE_KIND_VARHANDLE_INVOKE_GENERIC 0x1F
-#ifdef J9VM_OPT_PANAMA
-#define J9_METHOD_HANDLE_KIND_NATIVE 0x20
-#endif
 #define J9_METHOD_HANDLE_KIND_FILTER_ARGUMENTS_WITH_COMBINER 0x21
 
 #endif /* VM_METHODHANDLEKINDS_H_ */

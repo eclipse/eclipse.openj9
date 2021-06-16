@@ -146,7 +146,6 @@ set(main_sources
 	ObjectFieldInfo.cpp
 	ObjectMonitor.cpp
 	OutOfLineINL_com_ibm_jit_JITHelpers.cpp
-	OutOfLineINL_java_lang_invoke_NativeMethodHandle.cpp
 	OutOfLineINL_jdk_internal_misc_Unsafe.cpp
 	ownedmonitors.c
 	profilingbc.c

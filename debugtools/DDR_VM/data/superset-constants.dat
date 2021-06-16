@@ -932,7 +932,6 @@ C|opt_noClassloaders
 C|opt_nrr
 C|opt_paas
 C|opt_packed
-C|opt_panama
 C|opt_phpSupport
 C|opt_reflect
 C|opt_remoteConsoleSupport
@@ -4177,7 +4176,6 @@ C|JCL_RTFLAG_INTERP_HOT_CODE_REPLACEMENT
 C|JCL_RTFLAG_JIT_NEW_INSTANCE_PROTOTYPE
 C|JCL_RTFLAG_OPT_METHOD_HANDLE
 C|JCL_RTFLAG_OPT_MODULE
-C|JCL_RTFLAG_OPT_PANAMA
 C|JCL_RTFLAG_OPT_REFLECT
 S|J9VmlsConstants|J9VmlsConstantsPointer|
 C|J9VMLS_MAX_KEYS
