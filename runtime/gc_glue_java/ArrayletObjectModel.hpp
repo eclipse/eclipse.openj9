@@ -1031,7 +1031,6 @@ public:
 			? isCorrectDataAddrForDiscontiguousArraylet(arrayPtr)
 			: isCorrectDataAddrForContiguousArraylet(arrayPtr);
 	}
-#endif /* J9VM_ENV_DATA64 */
 
 	/**
 	 * Asserts that the dataAddr field of the contiguous arraylet is correct.
@@ -1041,13 +1040,8 @@ public:
 	MMINLINE bool
 	isCorrectDataAddrForContiguousArraylet(J9IndexableObject *arrayPtr)
 	{
-		bool isCorrectData = true;
-#if defined(J9VM_ENV_DATA64)
-		void *dataAddr;
-		dataAddr = getDataAddrForContiguous(arrayPtr);
-		isCorrectData = isCorrectDataAddrContiguous(arrayPtr, dataAddr);
-#endif /* J9VM_ENV_DATA64 */
-		return isCorrectData;
+		void *dataAddr = getDataAddrForContiguous(arrayPtr);
+		return isCorrectDataAddrContiguous(arrayPtr, dataAddr);
 	}
 
 	/**
@@ -1058,14 +1052,10 @@ public:
 	MMINLINE bool
 	isCorrectDataAddrForDiscontiguousArraylet(J9IndexableObject *arrayPtr)
 	{
-		bool isCorrectData = true;
-#if defined(J9VM_ENV_DATA64)
-		void *dataAddr;
-		dataAddr = getDataAddrForDiscontiguous(arrayPtr);
-		isCorrectData= isCorrectDataAddrDiscontiguous(arrayPtr, dataAddr);
-#endif /* J9VM_ENV_DATA64 */
-	return isCorrectData;
+		void *dataAddr = getDataAddrForDiscontiguous(arrayPtr);
+		return isCorrectDataAddrDiscontiguous(arrayPtr, dataAddr);
 	}
+#endif /* J9VM_ENV_DATA64 */
 
 	/**
 	 * External fixup dataAddr API to update pointer of indexable objects.
