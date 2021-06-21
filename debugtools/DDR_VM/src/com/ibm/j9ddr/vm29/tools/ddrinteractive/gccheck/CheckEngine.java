@@ -1195,7 +1195,7 @@ class CheckEngine
 			}
 		}
 
-		if (J9BuildFlags.arch_x86 && J9BuildFlags.env_data64 && isIndexableDataAddressFlagSet() && ObjectModel.isIndexable(object)) {
+		if (J9BuildFlags.env_data64 && isIndexableDataAddressFlagSet() && ObjectModel.isIndexable(object)) {
 			J9IndexableObjectPointer array = J9IndexableObjectPointer.cast(object);
 			if(false == J9IndexableObjectHelper.isCorrectDataPointer(array)) {
 				return J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS;
