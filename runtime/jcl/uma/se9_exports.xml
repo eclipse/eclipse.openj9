@@ -65,6 +65,6 @@
 	<export name="Java_java_lang_StackWalker_walkWrapperImpl" />
 	<export name="Java_java_lang_StackWalker_getImpl" />
 	<export name="Java_java_lang_invoke_MethodHandles_findNativeAddress">
-		<include-if condition="spec.flags.opt_panama and spec.flags.opt_methodHandle" />
+		<include-if condition="spec.flags.opt_methodHandle" />
 	</export>
 </exports>

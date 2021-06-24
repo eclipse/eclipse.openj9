@@ -532,9 +532,6 @@ if(NOT JAVA_SPEC_VERSION LESS 9)
 			Java_java_lang_invoke_FieldVarHandle_lookupField
 			Java_java_lang_invoke_FieldVarHandle_unreflectField
 		)
-		if(J9VM_OPT_PANAMA)
-			omr_add_exports(jclse Java_java_lang_invoke_MethodHandles_findNativeAddress)
-		endif()
 	endif()
 
 	omr_add_exports(jclse

@@ -92,7 +92,6 @@ SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-excepti
 	<classref name="java/lang/ref/SoftReference"/>
 	<classref name="java/util/concurrent/locks/AbstractOwnableSynchronizer"/>
 	<classref name="java/lang/invoke/PrimitiveHandle" flags="opt_methodHandle"/>
-	<classref name="java/lang/invoke/NativeMethodHandle" flags="opt_panama"/>
 	<classref name="java/lang/invoke/ReceiverBoundHandle" flags="opt_methodHandle"/>
 	<classref name="java/lang/invoke/ConvertHandle" flags="opt_methodHandle"/>
 	<classref name="java/lang/invoke/CollectHandle" flags="opt_methodHandle"/>
@@ -295,7 +294,6 @@ SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-excepti
 	<fieldref class="java/lang/invoke/PrimitiveHandle" name="defc" signature="Ljava/lang/Class;" flags="opt_methodHandle"/>
 	<fieldref class="java/lang/invoke/MethodHandle" name="kind" signature="B" flags="opt_methodHandle"/>
 	<fieldref class="java/lang/invoke/MethodHandle" name="previousAsType" signature="Ljava/lang/invoke/MethodHandle;" flags="opt_methodHandle"/>
-	<fieldref class="java/lang/invoke/NativeMethodHandle" name="J9NativeCalloutDataRef" signature="J" cast="J9NativeCalloutData *" flags="opt_panama"/>
 	<fieldref class="java/lang/invoke/ReceiverBoundHandle" name="receiver" signature="Ljava/lang/Object;" flags="opt_methodHandle"/>
 	<fieldref class="java/lang/invoke/ConvertHandle" name="next" signature="Ljava/lang/invoke/MethodHandle;" flags="opt_methodHandle"/>
 	<fieldref class="java/lang/invoke/FoldHandle" name="next" signature="Ljava/lang/invoke/MethodHandle;" flags="opt_methodHandle"/>

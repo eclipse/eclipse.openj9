@@ -662,10 +662,6 @@ all data is stored in their own region. It additionaly reduces footprint, mainly
 		<description>Indicates that this spec should run automated testing jobs in the nightly build</description>
 		<ifRemoved>This spec will not run any tests and will be a "build only" spec</ifRemoved>
 	</flag>
-	<flag id="graph_enableTesting_Panama">
-		<description>Indicates that this spec should run automated testing jobs in the nightly build</description>
-		<ifRemoved>This spec will not run any tests and will be a "build only" spec</ifRemoved>
-	</flag>
 	<flag id="graph_excludeAllocFib">
 		<description>Indicates that this spec wishes to not run the AllocFib test suite in the nightly build</description>
 		<ifRemoved>AllocFib test suite will be run in the nightly build, if otherwise included</ifRemoved>
@@ -1828,10 +1824,6 @@ Only available on zOS</description>
 	<flag id="opt_packed">
 		<description>Enables support for @Packed types (Structs)</description>
 		<ifRemoved>No support for @Packed types (Structs)</ifRemoved>
-	</flag>
-	<flag id="opt_panama">
-		<description>Enables support for Project Panama features such as native method handles</description>
-		<ifRemoved>No support for Project Panama features such as native method handles</ifRemoved>
 	</flag>
 	<flag id="opt_valhallaValueTypes">
 		<description>Enables support for Project Valhalla L-World Value Types</description>

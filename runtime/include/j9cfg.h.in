@@ -235,7 +235,6 @@ extern "C" {
 #cmakedefine J9VM_OPT_NRR
 #cmakedefine J9VM_OPT_OPENJDK_METHODHANDLE
 #cmakedefine J9VM_OPT_PACKED
-#cmakedefine J9VM_OPT_PANAMA
 #cmakedefine J9VM_OPT_PHP_SUPPORT
 #cmakedefine J9VM_OPT_REFLECT
 #cmakedefine J9VM_OPT_RESOURCE_MANAGED

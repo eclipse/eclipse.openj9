@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016, 2020 IBM Corp. and others
+ * Copyright (c) 2016, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -38,10 +38,6 @@ J9OutOfLineINLMethod OutOfLineINL_jdk_internal_misc_Unsafe_compareAndExchangeObj
 J9OutOfLineINLMethod OutOfLineINL_jdk_internal_misc_Unsafe_compareAndExchangeIntVolatile;
 J9OutOfLineINLMethod OutOfLineINL_jdk_internal_misc_Unsafe_compareAndExchangeLongVolatile;
 J9OutOfLineINLMethod OutOfLineINL_com_ibm_jit_JITHelpers_acmplt;
-#if defined(J9VM_OPT_PANAMA)
-J9OutOfLineINLMethod OutOfLineINL_java_lang_invoke_NativeMethodHandle_initJ9NativeCalloutDataRef;
-J9OutOfLineINLMethod OutOfLineINL_java_lang_invoke_NativeMethodHandle_freeJ9NativeCalloutDataRef;
-#endif /* defined(J9VM_OPT_PANAMA) */
 }
 
 class VM_OutOfLineINL_Helpers {

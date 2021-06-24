@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1998, 2020 IBM Corp. and others
+ * Copyright (c) 1998, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -74,10 +74,6 @@ computeJCLRuntimeFlags(J9JavaVM *vm)
 #ifdef J9VM_OPT_METHOD_HANDLE
 	flags |= JCL_RTFLAG_OPT_METHOD_HANDLE;
 #endif /* J9VM_OPT_METHOD_HANDLE */
-
-#ifdef J9VM_OPT_PANAMA
-	flags |= JCL_RTFLAG_OPT_PANAMA;
-#endif /* J9VM_OPT_PANAMA */
 
 #ifdef J9VM_OPT_MODULE
 	if (J2SE_VERSION(vm) >= J2SE_V11) {
