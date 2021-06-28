@@ -589,44 +589,7 @@ void TR_ValueProfiler::modifyTrees()
                addProfilingTrees(firstChild, tt->getPrevTreeTop(), 10);
             }
          }
-
-
-      if (!getInitialCompilation())
-         visitNode(node, tt, visitCount);
       }
-   }
-
-void
-TR_ValueProfiler::visitNode(
-      TR::Node *node,
-      TR::TreeTop *tt,
-      vcount_t visitCount)
-   {
-   if (node->getVisitCount() == visitCount)
-      return;
-
-   node->setVisitCount(visitCount);
-
-   static char *profileLongParms = feGetEnv("TR_ProfileLongParms");
-   if (profileLongParms &&
-       (node->getType().isInt64()) &&
-       node->getOpCode().isLoadVar() &&
-       !node->getByteCodeInfo().doNotProfile())
-      {
-      TR::Node *intNode = TR::Node::create(TR::l2i, 1, TR::Node::create(TR::lushr, 2, node, TR::Node::create(node, TR::iconst, 0, 32)));
-      TR::ILOpCode &placeHolderOpCode = tt->getNode()->getOpCode();
-      if (placeHolderOpCode.isBranch() ||
-          placeHolderOpCode.isJumpWithMultipleTargets() ||
-          placeHolderOpCode.isReturn() ||
-          placeHolderOpCode.getOpCodeValue() == TR::athrow)
-        addProfilingTrees(intNode, tt->getPrevTreeTop());
-      else
-        addProfilingTrees(intNode, tt);
-      }
-
-   int32_t i;
-   for (i = 0; i < node->getNumChildren(); i++)
-     visitNode(node->getChild(i), tt, visitCount);
    }
 
 bool

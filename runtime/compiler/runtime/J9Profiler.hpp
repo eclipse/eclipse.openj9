@@ -403,7 +403,7 @@ class TR_ValueProfiler : public TR_RecompilationProfiler
    void setPostLowering(bool post = true) { _postLowering = post; }
 
    private:
-   void visitNode(TR::Node *, TR::TreeTop *, vcount_t);
+
    bool validConfiguration(TR::DataType dataType, TR_ValueInfoKind kind);
 
    void addListOrArrayProfilingTrees(TR::Node *node, TR::TreeTop *treetop, TR_ByteCodeInfo &bci, size_t numExpandedValues = 0,
