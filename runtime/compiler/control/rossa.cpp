@@ -2045,6 +2045,17 @@ aboutToBootstrap(J9JavaVM * javaVM, J9JITConfig * jitConfig)
       }
 #endif
 
+   /* If the JVM is in CRIU mode, then the JIT should be limited to the same processor
+    * features as those used in Portable AOT mode. This is because, the restore run may
+    * not be on the same machine as the one that created the snapshot; thus the JIT code
+    * must be portable.
+    */
+   if (J9_ARE_ANY_BITS_SET(javaVM->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_CRIU_SUPPORT))
+      {
+      TR::Compiler->target.cpu = TR::CPU::detectRelocatable(TR::Compiler->omrPortLib);
+      jitConfig->targetProcessor = TR::Compiler->target.cpu.getProcessorDescription();
+      }
+
    #if defined(TR_TARGET_S390)
       uintptr_t * tocBase = (uintptr_t *)jitConfig->pseudoTOC;
 
