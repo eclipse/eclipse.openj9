@@ -844,6 +844,12 @@ J9::Compilation::compileRelocatableCode()
    return self()->fej9()->isAOT_DEPRECATED_DO_NOT_USE();
    }
 
+bool
+J9::Compilation::compilePortableCode()
+   {
+   return self()->fej9()->inSnapshotMode();
+   }
+
 
 int32_t
 J9::Compilation::maxInternalPointers()

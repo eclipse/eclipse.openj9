@@ -9288,6 +9288,12 @@ TR_J9VMBase::classNameChars(TR::Compilation *comp, TR::SymbolReference * symRef,
    return n;
    }
 
+bool
+TR_J9VMBase::inSnapshotMode()
+   {
+   return J9_ARE_ANY_BITS_SET(getJ9JITConfig()->javaVM->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_CRIU_SUPPORT);
+   }
+
 
 // Native method bodies
 //

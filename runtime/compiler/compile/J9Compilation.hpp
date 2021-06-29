@@ -198,6 +198,8 @@ class OMR_EXTENSIBLE Compilation : public OMR::CompilationConnector
 
    bool compileRelocatableCode();
 
+   bool compilePortableCode();
+
    int32_t maxInternalPointers();
 
    bool compilationShouldBeInterrupted(TR_CallingContext);

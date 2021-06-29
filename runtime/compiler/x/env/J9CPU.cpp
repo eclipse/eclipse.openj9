@@ -206,7 +206,7 @@ J9::X86::CPU::is_test(OMRProcessorArchitecture p)
    if (TR::CompilationInfo::getStream())
       return true;
 #endif /* defined(J9VM_OPT_JITSERVER) */
-   if (TR::comp()->compileRelocatableCode())
+   if (TR::comp()->compileRelocatableCode() || TR::comp()->compilePortableCode())
       return true;
 
    switch(p)
@@ -254,7 +254,7 @@ J9::X86::CPU::supports_feature_test(uint32_t feature)
    if (TR::CompilationInfo::getStream())
       return true;
 #endif /* defined(J9VM_OPT_JITSERVER) */
-   if (TR::comp()->compileRelocatableCode())
+   if (TR::comp()->compileRelocatableCode() || TR::comp()->compilePortableCode())
       return true;
 
    OMRPORT_ACCESS_FROM_OMRPORT(TR::Compiler->omrPortLib);
