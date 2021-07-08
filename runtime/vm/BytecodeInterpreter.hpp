@@ -8368,8 +8368,28 @@ done:
 			/* Restore SP to before popping memberNameObject. */
 			_sp -= 1;
 
-			/* Shift arguments by 1 and place memberNameObject before the first argument. */
-			memmove(_sp, _sp + 1, methodArgCount * sizeof(UDATA));
+			UDATA stackOffset = 1;
+			IDATA jitArgCount = (IDATA)_currentThread->floatTemp1;
+			/* Skip the below stack adjustment if JIT sets floatTemp1 to a negative value (-1). */
+			if (jitArgCount > 0) {
+				IDATA argDiff = (UDATA)jitArgCount - methodArgCount;
+				if (argDiff > 0) {
+					/* JIT will call linkToStatic for unresolved invokedynamic and invokehandle sequences.
+					* For invokedynamic and invokehandle, the appendix object should not be appended to the
+					* stack if it is null. For the unresolved cases, the JIT does not know the value of the
+					* appendix object prior to calling linkToStatic. For the JIT paths, the appendix object
+					* should be removed from the stack if the _sendMethod does not expect it. The MemberName
+					* object is located at the top of the stack. The appendix object is located before the
+					* MemberName object.
+					*/
+					Assert_VM_true(argDiff == 1);
+					/* Set stackOffset to remove the appendix object. */
+					stackOffset = 2;
+				}
+			}
+
+			/* Shift arguments and place memberNameObject before the first argument. */
+			memmove(_sp, _sp + stackOffset, methodArgCount * sizeof(UDATA));
 			_sp[methodArgCount] = (UDATA)memberNameObject;
 
 			_currentThread->jitStackFrameFlags = 0;
