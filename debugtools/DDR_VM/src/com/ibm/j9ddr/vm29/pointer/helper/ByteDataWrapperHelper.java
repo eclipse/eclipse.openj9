@@ -34,6 +34,7 @@ import com.ibm.j9ddr.vm29.types.U16;
 import com.ibm.j9ddr.vm29.types.U32;
 import com.ibm.j9ddr.vm29.types.U8;
 import com.ibm.j9ddr.vm29.types.UDATA;
+import com.ibm.j9ddr.vm29.types.IDATA;
 
 public class ByteDataWrapperHelper {
 	// #define BDWITEM(bdw) (((U_8*)(bdw)) - sizeof(ShcItem))
@@ -45,7 +46,7 @@ public class ByteDataWrapperHelper {
 			return I32Pointer.cast(externalBlockOffset).at(0);
 		} else {
 			try {
-				UDATA offset = J9ShrOffsetPointer.cast(externalBlockOffset).offset();
+				IDATA offset = J9ShrOffsetPointer.cast(externalBlockOffset).offset();
 				return new I32(offset);
 			} catch (NoClassDefFoundError | NoSuchFieldException e) {
 				// J9ShrOffset didn't exist in the VM that created this core file
@@ -75,7 +76,7 @@ public class ByteDataWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(externalBlockOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					/* return the same as SH_CacheMap::getDataFromByteDataWrapper(const ByteDataWrapper *bdw) */
@@ -109,7 +110,7 @@ public class ByteDataWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(tokenOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					return cacheHeader[layer].add(offset);

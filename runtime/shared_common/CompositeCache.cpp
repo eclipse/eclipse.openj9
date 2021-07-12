@@ -30,6 +30,7 @@
 #include "j9protos.h"
 #include "j9shrnls.h"
 #include "jvminit.h"
+#include "rommeth.h"
 #include "shrinit.h"
 #include "ut_j9shr.h"
 
@@ -40,43 +41,42 @@
 #define SEMSUFFIX "SHSEM"
 
 /**
- * CACHE AREAS
+ *
  *
  * Cache areas consists of a header followed by a series of segment entries
  * followed by free space followed by a series of cache entries. 
  * The layout of a cache entry is described later.
  *
- * *-----------------------------*---------*-------*-------*-------------------*-------*-------*-------------------*
- * |                             |         |       |       |                   |       |       |   Class Debug     |
- * | J9SharedCacheHeader         |readWrite|segment|segment|    free space     |cache  |cache  |   Attribute       |
- * |  {totalBytes, updateSRP,    |area     |entry1 |entry2 |                   |entry2 |entry1 |   Data            |
- * |   updateCount, segmentSRP}  |         |       |       |                   |       |       |                   |
- * |                             |         |       |       |                   |       |       |                   |
- * *-----------------------------*---------*-------*-------*-------------------*-------*-------*-------------------*
+ * *-----------------------------*-------------------*-------------------*-------*-------*-------------------*-------*-------*
+ * |                             |  Class Debug      |                   |       |       |                   |       |       |
+ * | J9SharedCacheHeader         |  Attribute        |    readWrite      |segment|segment|     free space    |cache  |cache  |
+ * |  {totalBytes, updateSRP,    |  Data             |    area           |entry1 |entry2 |                   |entry2 |entry1 |
+ * |   updateCount, segmentSRP}  |                   |                   |       |       |                   |       |       |
+ * |                             |                   |                   |       |       |                   |       |       |
+ * *-----------------------------*-------------------*-------------------*-------*-------*-------------------*-------*-------*
  *
- *  <-------------------- totalBytes ------------------------------------------------------------------------------>
- *  <-------------------- readWriteBytes -->
- *                                                          <--- free --------->
- * ^                             ^                         ^                   ^               ^                   ^
- * _theca				   readWriteSRP                segmentSRP          updateSRP      CADEBUGSTART         CAEND
+ *  <-------------------- totalBytes ---------------------------------------------------------------------------------------->
+ *                               <- debugRegionSize->*<- readWriteBytes ->               <------- free ------>
+ * ^                             ^                   ^                   ^               ^                   ^               ^
+ * _theca                     CASTART            readWriteSRP        CASEGSTART       segmentSRP          updateSRP        CAEND
  */
  
-#define CASTART(ca)  (((BlockPtr)(ca)) + (ca)->readWriteBytes)
-#define CADEBUGSTART(ca) (((BlockPtr)(ca)) + (ca)->totalBytes - (ca)->debugRegionSize)
+#define CASTART(ca)  (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader))
+#define CASEGSTART(ca) (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader) + (ca)->debugRegionSize + (ca)->readWriteBytes)
 #define CAEND(ca) (((BlockPtr)(ca)) + (ca)->totalBytes)
-#define CCFIRSTENTRY(ca) (((BlockPtr)(ca)) + (ca)->totalBytes - (ca)->debugRegionSize - sizeof(ShcItemHdr))
+#define CCFIRSTENTRY(ca) (((BlockPtr)(ca)) + (ca)->totalBytes - sizeof(ShcItemHdr))
 
 #define UPDATEPTR(ca) (((BlockPtr)(ca)) + (ca)->updateSRP)
 #define RWUPDATEPTR(ca) (((BlockPtr)(ca)) + (ca)->readWriteSRP)
 #define SEGUPDATEPTR(ca) (((BlockPtr)(ca)) + (ca)->segmentSRP)
 
-#define READWRITEAREASIZE(ca) ((ca)->readWriteBytes - sizeof(J9SharedCacheHeader))
-#define READWRITEAREASTART(ca) (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader))
+#define READWRITEAREASIZE(ca) ((ca)->readWriteBytes)
+#define READWRITEAREASTART(ca) (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader) + (ca)->debugRegionSize)
 
 #define FREEBYTES(ca) ((ca)->updateSRP - (ca)->segmentSRP)
-#define METADATASECTIONBYTES(ca) ((ca)->totalBytes - (ca)->debugRegionSize - (ca)->updateSRP)
-#define CLASSSECTIONBYTES(ca) ((ca)->segmentSRP - (ca)->readWriteBytes)
-#define FREEREADWRITEBYTES(ca) ((ca)->readWriteBytes - (U_32)(ca)->readWriteSRP)
+#define METADATASECTIONBYTES(ca) ((ca)->totalBytes - (ca)->updateSRP)
+#define CLASSSECTIONBYTES(ca) ((ca)->segmentSRP - (ca)->readWriteBytes - (ca)->debugRegionSize - sizeof(J9SharedCacheHeader))
+#define FREEREADWRITEBYTES(ca) (sizeof(J9SharedCacheHeader) + (U_32)(ca)->debugRegionSize + (ca)->readWriteBytes - (ca)->readWriteSRP)
 
 #define CC_TRACE(verboseLevel, nlsFlags, var1) if (_verboseFlags & verboseLevel) j9nls_printf(PORTLIB, nlsFlags, var1)
 #define CC_TRACE1(verboseLevel, nlsFlags, var1, p1) if (_verboseFlags & verboseLevel) j9nls_printf(PORTLIB, nlsFlags, var1, p1)
@@ -135,7 +135,7 @@ SH_CompositeCacheImpl::SH_SharedCacheHeaderInit::init(BlockPtr data, U_32 len, I
 	memset(ca, 0, sizeof(J9SharedCacheHeader));
 
 	ca->totalBytes = len;
-	ca->readWriteBytes = readWriteLen + sizeof(J9SharedCacheHeader);
+	ca->readWriteBytes = readWriteLen;
 	ca->updateSRP = (UDATA)len;
 	ca->readWriteSRP = sizeof(J9SharedCacheHeader);
 	ca->segmentSRP = (UDATA)ca->readWriteBytes;
@@ -214,7 +214,7 @@ SH_CompositeCacheImpl::commonInit(J9JavaVM* vm)
 	_readOnlyReaderCount = 0;
 	_readWriteProtectCntr = 0;
 	_headerProtectCntr = 1;		/* Initialize to 1 indicating "unprotected" */
-	_readWriteAreaHeaderIsReadOnly = false;
+	_readWriteAreaIsReadOnly = false;
 	_metadataSegmentPtr = NULL;
 	_currentROMSegment = NULL;
 	_next = NULL;
@@ -595,9 +595,20 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 {
 	J9JavaVM* vm = currentThread->javaVM;
 	U_32 finalReadWriteSize = 0;
-	BlockPtr finalSegmentStart;
-	U_32 numOfSharedNodes;
-	U_32 maxSharedStringTableSize;
+	U_32 tmpReadWriteSize = 0;
+	BlockPtr finalSegmentStart = NULL;;
+	BlockPtr finalDebugEnd = NULL;
+	U_32 maxSharedStringTableSize = 0;
+	bool forcePageAlign = J9_ARE_ANY_BITS_SET(*_runtimeFlags, J9SHR_RUNTIMEFLAG_ENABLE_ROUND_TO_PAGE_SIZE);
+	U_32 align = 0;
+	if (forcePageAlign) {
+		/* The size of the cache will be rounded down to a multiple of 'align' which is normally the _osPageSize.
+	 	* On some AIX boxes _osPageSize is zero, in this case we set align to be 4KB.
+	 	*/
+		align = (0 != _osPageSize) ? (U_32)_osPageSize : 0x1000;
+	} else {
+		align = SHC_WORDALIGN;
+	}
 	
 	PORT_ACCESS_FROM_JAVAVM(vm);
 	
@@ -607,17 +618,18 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 	}
 	Trc_SHR_CC_setCacheAreaBoundaries_Entry(currentThread);
 
-	finalReadWriteSize = READWRITEAREASIZE(_theca);		/* Note that this does not include the size of the J9SharedCacheHeader */
+	tmpReadWriteSize = READWRITEAREASIZE(_theca);		/* Note that this does not include the size of the J9SharedCacheHeader */
+	
 	/**
-	 * finalReadWriteSize can be 0 in two cases
+	 * tmpReadWriteSize can be 0 in two cases
 	 * 1. If user do not pass an argument to define the size of shared string intern table. (i.e -Xitsn option)
-	 * 		In this case, sharedClassReadWriteBytes is expected to be -1 and finalReadWriteSize is set to the proportional value of shared cache.
-	 * 2. If user pass an argument to define the size of shared intern table is 0 then finalReadWriteSize is 0 and it is user intentional.
-	 * 		In this case it is user's preference that finalReadWriteSize is 0.
+	 * 		In this case, sharedClassReadWriteBytes is expected to be -1 and tmpReadWriteSize is set to the proportional value of shared cache.
+	 * 2. If user pass an argument to define the size of shared intern table is 0 then tmpReadWriteSize is 0 and it is user intentional.
+	 * 		In this case it is user's preference that tmpReadWriteSize is 0.
 	 */
-	if ((finalReadWriteSize == 0) && (piConfig->sharedClassReadWriteBytes == -1)) {
+	if ((tmpReadWriteSize == 0) && (piConfig->sharedClassReadWriteBytes == -1)) {
 		/* If no explicit value for sharedClassReadWriteBytes was set, set it to a proportion of the cache size */
-		finalReadWriteSize = SHC_PAD((_theca->totalBytes / DEFAULT_READWRITE_BYTES_DIVISOR), SHC_WORDALIGN);
+		tmpReadWriteSize = SHC_PAD((_theca->totalBytes / DEFAULT_READWRITE_BYTES_DIVISOR), SHC_WORDALIGN);
 		maxSharedStringTableSize = srpHashTable_requiredMemorySize(SHRINIT_MAX_SHARED_STRING_TABLE_NODE_COUNT, sizeof(J9SharedInternSRPHashTableEntry), TRUE);
 		if (maxSharedStringTableSize == PRIMENUMBERHELPER_OUTOFRANGE) {
 			/*
@@ -627,8 +639,8 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 			 */
 			Trc_SHR_Assert_ShouldNeverHappen();
 		}
-		if (finalReadWriteSize > maxSharedStringTableSize) {
-			finalReadWriteSize = maxSharedStringTableSize;
+		if (tmpReadWriteSize > maxSharedStringTableSize) {
+			tmpReadWriteSize = maxSharedStringTableSize;
 		}
 		/*
 		 * Calculate the exact amount of memory that is needed
@@ -636,49 +648,91 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 		 * This will prevent wasting any extra memory that is wasted by SRP hashtable.
 		 */
 		if (!(*_runtimeFlags & J9SHR_RUNTIMEFLAG_ENABLE_ROUND_TO_PAGE_SIZE)) {
-			numOfSharedNodes = srpHashTable_calculateTableSize(finalReadWriteSize, sizeof(J9SharedInternSRPHashTableEntry), FALSE);
+			U_32 numOfSharedNodes = srpHashTable_calculateTableSize(tmpReadWriteSize, sizeof(J9SharedInternSRPHashTableEntry), FALSE);
 			if (numOfSharedNodes == PRIMENUMBERHELPER_OUTOFRANGE) {
 				/**
-				 * This should never happen since finalReadWriteSize is limited up to maxSharedStringTableSize above.
+				 * This should never happen since tmpReadWriteSize is limited up to maxSharedStringTableSize above.
 				 * maxSharedStringTableSize is calculated above with the function srpHashTable_requiredMemorySize
 				 * which returns PRIMENUMBERHELPER_OUTOFRANGE if SHRINIT_MAX_SHARED_STRING_TABLE_NODE_COUNT
 				 * is not in the supported range of PrimeNumberHelper.
 				 */
 				Trc_SHR_Assert_ShouldNeverHappen();
 			}
-			finalReadWriteSize = srpHashTable_requiredMemorySize(numOfSharedNodes, sizeof(J9SharedInternSRPHashTableEntry), FALSE);
+			tmpReadWriteSize = srpHashTable_requiredMemorySize(numOfSharedNodes, sizeof(J9SharedInternSRPHashTableEntry), FALSE);
 		}
 	}
 
+	finalReadWriteSize = ROUND_UP_TO(align, tmpReadWriteSize);
+	_theca->readWriteBytes = finalReadWriteSize;
+	_theca->osPageSize = _osPageSize;
+	_theca->updateSRP = (UDATA)_theca->totalBytes;
+	_theca->segmentSRP = sizeof(J9SharedCacheHeader) + finalReadWriteSize; /* Temporarily set segmentSRP to cauculate the debug region size. It'll be updated later */
+
+	/*
+	 * Set up the 'debug' region of the cache header
+	 */	
+	U_32 debugsize = 0;
+	U_32 freeBlockBytes = getFreeBlockBytes();
+	/* If the cache was created with -Xnolinenumbers then the debug area is not created by default.
+	 * If -Xscdmx is used then we will still reserve the debug area.
+	 */
+	if ((true == this->getIsNoLineNumberEnabled()) && (piConfig->sharedClassDebugAreaBytes == -1)) {
+		Trc_SHR_CC_setCacheAreaBoundaries_Event_XnolinenumbersMeansNoDebugArea(currentThread);
+		piConfig->sharedClassDebugAreaBytes = 0;
+	}
+
+	/* If -Xscdmx was used sharedClassDebugAreaBytes will be set to a positive value.*/
+	if (piConfig->sharedClassDebugAreaBytes != -1) {
+		debugsize = (U_32)piConfig->sharedClassDebugAreaBytes;
+	}
+
+	/* If -Xscdmx is too large, or -Xscdmx was not used then use default size.*/
+	if ( (piConfig->sharedClassDebugAreaBytes == -1) || (debugsize > freeBlockBytes) ) {
+		U_32 newdebugsize = ClassDebugDataProvider::recommendedSize(freeBlockBytes, align);
+		if (debugsize > (U_32)(FREEBYTES(_theca))) {
+			CC_INFO_TRACE3(J9NLS_SHRC_SHRINIT_SCDMX_GRTHAN_SCMX, debugsize, FREEBYTES(_theca), newdebugsize);
+		}
+		debugsize = newdebugsize;
+	}
+	
+	if (debugsize > 0) {
+		/* Let debug region ends on a aligned address, it is a page boundary if forcePageAlign is true */
+		finalDebugEnd = (BlockPtr)ROUND_UP_TO(align, ((UDATA)CASTART(_theca) + (UDATA)debugsize));
+		debugsize = (U_32)(finalDebugEnd - (BlockPtr)CASTART(_theca));
+	} else {
+		BlockPtr readWriteEnd =  (BlockPtr)ROUND_UP_TO(align, ((UDATA)CASTART(_theca) + (UDATA)tmpReadWriteSize));
+		finalReadWriteSize = (U_32)(readWriteEnd - (BlockPtr)CASTART(_theca));
+		_theca->readWriteBytes = finalReadWriteSize;
+	}
+
+	Trc_SHR_CC_setCacheAreaBoundaries_Event_CreateDebugAreaSize(currentThread, debugsize);
+	ClassDebugDataProvider::HeaderInit(_theca, debugsize);
+	
+	/* The segment area and cache end will need to be reset onto page boundaries */
+	
+	BlockPtr origCacheEnd = CAEND(_theca);
+
+	Trc_SHR_CC_setCacheAreaBoundaries_Event_prePageRounding(currentThread, finalSegmentStart, origCacheEnd, _theca->totalBytes);
 
 	/* Work out where the segment area will now start from */
-	finalSegmentStart = (BlockPtr)SHC_PAD(((UDATA)((BlockPtr)_theca) + finalReadWriteSize + sizeof(J9SharedCacheHeader)), SHC_WORDALIGN);
+	finalSegmentStart = (BlockPtr)((UDATA)((BlockPtr)_theca) + _theca->debugRegionSize + _theca->readWriteBytes + sizeof(J9SharedCacheHeader));
+	/* The segment area starts on an aligned address */
+	Trc_SHR_Assert_True(0 == ((UDATA)finalSegmentStart % align));
+	/* Now, adjust the end of the cache so that it is on an aligned address. */
+	BlockPtr newCacheEnd = (BlockPtr)ROUND_DOWN_TO(align, (UDATA)origCacheEnd);
+		
+	_theca->totalBytes -= (U_32)(origCacheEnd - newCacheEnd);
+
+	Trc_SHR_CC_setCacheAreaBoundaries_Event_postPageRounding(currentThread, finalSegmentStart, newCacheEnd, _theca->totalBytes);
 	
-	/* If we're rounding to page sizes, the segment area and cache end will need to be reset onto page boundaries */
-	if (*_runtimeFlags & J9SHR_RUNTIMEFLAG_ENABLE_ROUND_TO_PAGE_SIZE) {
-		BlockPtr origCacheEnd = CAEND(_theca);
-		BlockPtr newCacheEnd;
-
-		Trc_SHR_CC_setCacheAreaBoundaries_Event_prePageRounding(currentThread, finalSegmentStart, origCacheEnd, _theca->totalBytes);
-
-		/* Reset the segment start area onto a page boundary */
-		finalSegmentStart = (BlockPtr)ROUND_UP_TO(_osPageSize, (UDATA)finalSegmentStart);
-		
-		/* Now, adjust the end of the cache so that it is on a page boundary */
-		newCacheEnd = (BlockPtr)ROUND_DOWN_TO(_osPageSize, (UDATA)origCacheEnd);
-		
-		_theca->totalBytes -= (U_32)(origCacheEnd - newCacheEnd);
+	if (forcePageAlign) {
+		/* set roundedPagesFlag to 1 only when we actually rounded to _osPageSize */
 		_theca->roundedPagesFlag = 1;
-
-		Trc_SHR_CC_setCacheAreaBoundaries_Event_postPageRounding(currentThread, finalSegmentStart, newCacheEnd, _theca->totalBytes);
 	} else if (isVerbosePages() == true) {
 		j9tty_printf(PORTLIB, "Page size rounding not supported\n");
 	}
-
-	_theca->osPageSize = _osPageSize;
-	_theca->readWriteBytes = (U_32)(finalSegmentStart - (BlockPtr)_theca);		/* includes the cache header */
+	_theca->segmentSRP = finalSegmentStart - (BlockPtr)_theca;
 	_theca->updateSRP = (UDATA)_theca->totalBytes;
-	_theca->segmentSRP = _theca->readWriteBytes;
 
 	/**
 	 * Currently the read write area of composite cache is only used by shared string intern table.
@@ -709,53 +763,6 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 		_theca->sharedInternTableBytes = (IDATA)READWRITEAREASIZE(_theca);
 	}
 
-	/*
-	 * Set up the 'debug' region of the cache header
-	 */	
-	if (NULL == this->_parent) {
-		/* The size of the cache will be rounded down to a multiple of 'align' which normally the osPageSize.
-		 * On some AIX boxes _osPageSize is zero, in this case we set align to be 4KB.
-		 */
-		U_32 align = 0x1000;
-		U_32 debugsize = 0;
-		U_32 freeBlockBytes = getFreeBlockBytes();
-
-		if (0 != _osPageSize) {
-			align = (U_32)_osPageSize;
-		}
-		
-		/* If the cache was created with -Xnolinenumbers then the debug area is not created by default.
-		 * If -Xscdmx is used then we will still reserve the debug area.
-		 */
-		if ((true == this->getIsNoLineNumberEnabled()) && (piConfig->sharedClassDebugAreaBytes == -1)) {
-			Trc_SHR_CC_setCacheAreaBoundaries_Event_XnolinenumbersMeansNoDebugArea(currentThread);
-			piConfig->sharedClassDebugAreaBytes = 0;
-		}
-
-		/* If -Xscdmx was used sharedClassDebugAreaBytes will be set to a positive value.*/
-		if (piConfig->sharedClassDebugAreaBytes != -1) {
-			debugsize = (U_32)piConfig->sharedClassDebugAreaBytes;
-			if (debugsize < align) {
-				debugsize = 0;
-			} else {
-				debugsize = ROUND_DOWN_TO(align, debugsize);
-			}
-		}
-		
-		/* If -Xscdmx is too large, or -Xscdmx was not used then use default size.*/
-		if ( (piConfig->sharedClassDebugAreaBytes == -1) || (debugsize > freeBlockBytes) ) {
-			U_32 newdebugsize = ClassDebugDataProvider::recommendedSize(freeBlockBytes, align);
-			if (debugsize > (U_32)(FREEBYTES(_theca))) {
-				CC_INFO_TRACE3(J9NLS_SHRC_SHRINIT_SCDMX_GRTHAN_SCMX, debugsize, FREEBYTES(_theca), newdebugsize);
-			}
-			debugsize = newdebugsize;
-		}		
-		
-		Trc_SHR_CC_setCacheAreaBoundaries_Event_CreateDebugAreaSize(currentThread, debugsize);
-		ClassDebugDataProvider::HeaderInit(_theca, debugsize);
-		_theca->updateSRP -= (UDATA)debugsize;
-	}
-
 	if ((U_32)-1 != _theca->softMaxBytes) {
 		U_32 usedBytes = getUsedBytes();
 		U_32 softMaxValue = _theca->softMaxBytes;
@@ -768,12 +775,12 @@ SH_CompositeCacheImpl::setCacheAreaBoundaries(J9VMThread* currentThread, J9Share
 		}
 	}
 
-	if ((*_runtimeFlags & J9SHR_RUNTIMEFLAG_ENABLE_ROUND_TO_PAGE_SIZE) && (isVerbosePages() == true)) {
-		j9tty_printf(PORTLIB, "New cache rounded to page size of %d bytes\n", _osPageSize);
+	if (forcePageAlign && (isVerbosePages() == true)) {
+		j9tty_printf(PORTLIB, "New cache rounded to page size of %d bytes\n", align);
 		j9tty_printf(PORTLIB, "   CompositeCache header starts at %p\n", _theca);
 		j9tty_printf(PORTLIB, "   ReadWrite area starts at %p and is %d bytes\n", READWRITEAREASTART(_theca), READWRITEAREASIZE(_theca));
-		j9tty_printf(PORTLIB, "   ROMClass segment starts at %p\n", CASTART(_theca));
-		j9tty_printf(PORTLIB, "   Debug Region starts at %p and is %d bytes\n", CADEBUGSTART(_theca), _theca->debugRegionSize);
+		j9tty_printf(PORTLIB, "   Debug Region starts at %p and is %d bytes\n", CASTART(_theca), _theca->debugRegionSize);
+		j9tty_printf(PORTLIB, "   ROMClass segment starts at %p\n", CASEGSTART(_theca));
 		j9tty_printf(PORTLIB, "   Cache ends at %p\n", CAEND(_theca));
 		j9tty_printf(PORTLIB, "   Cache soft max bytes is %d\n", (IDATA)_theca->softMaxBytes);
 	}
@@ -1448,37 +1455,26 @@ SH_CompositeCacheImpl::startup(J9VMThread* currentThread, J9SharedClassPreinitCo
 					CC_TRACE(J9SHR_VERBOSEFLAG_ENABLE_VERBOSE, J9NLS_INFO, J9NLS_CC_PAGE_PROTECTION_NONE_INFO);
 				}
 				
-				/* Calculate the page boundaries for the CC header and readWrite areas, used for page protection.
-				 * Note that on platforms with 1MB page boundaries, the header and readWrite areas will all be in one page */
+				/* Calculate the page boundaries for the CC header, debug and readWrite areas, used for page protection.
+				 * Note that on platforms with 1MB page boundaries and with no debug region (pass 0 to -Xscdmx<x>), the header and readWrite areas will all be in one page */
 				if (*_runtimeFlags & J9SHR_RUNTIMEFLAG_ENABLE_ROUND_TO_PAGE_SIZE) {
-					U_32 roundedHeaderAndRWSize = (U_32)ROUND_UP_TO(_osPageSize, ((UDATA)CASTART(_theca) - (UDATA)_theca));
-					
-					_cacheHeaderPageStart = (BlockPtr)ROUND_DOWN_TO(_osPageSize, (UDATA)_theca);
-					_cacheHeaderPageBytes = (U_32)ROUND_UP_TO(_osPageSize, (UDATA)sizeof(J9SharedCacheHeader));
-					if (_readWriteAreaStart != NULL) {
-						_readWriteAreaPageStart = (BlockPtr)ROUND_DOWN_TO(_osPageSize, (UDATA)_readWriteAreaStart);
-						_readWriteAreaPageBytes = (U_32)ROUND_UP_TO(_osPageSize, (UDATA)_readWriteAreaBytes);
-						if (_readWriteAreaPageStart == _cacheHeaderPageStart) {
-							if (roundedHeaderAndRWSize == _osPageSize) {
-								/* Entire header and readWrite area is within the same page - treat as just header */ 
-								_readWriteAreaPageStart = NULL;
-								_readWriteAreaPageBytes = 0;
-							} else {
-								/* Header is smaller than a page, round up the start of the readWrite area to the next page
-								 * to ensure that it can be protected/unprotected independently */
-								_readWriteAreaPageStart += _osPageSize;
-								_readWriteAreaPageBytes = (U_32)(CASTART(_theca) - _readWriteAreaPageStart);
-							}
-						}
+					UDATA algn = (0 !=_osPageSize) ?  _osPageSize : 0x1000;
+					UDATA roundedHeaderDbgRWSize = ROUND_UP_TO(algn, (sizeof(J9SharedCacheHeader) + _theca->debugRegionSize + (UDATA)_readWriteAreaBytes));
+					if (_theca->debugRegionSize > 0) {
+						Trc_SHR_Assert_True(0 == ((UDATA)_readWriteAreaBytes % algn));
+						_readWriteAreaPageBytes = _readWriteAreaBytes;
+						_readWriteAreaPageStart = (BlockPtr)_readWriteAreaStart;
 					} else {
-						_readWriteAreaPageStart = NULL;
-						_readWriteAreaPageBytes = 0;
+						_readWriteAreaPageBytes = (U_32)ROUND_DOWN_TO(algn, (UDATA)_readWriteAreaBytes);
+						_readWriteAreaPageStart = (BlockPtr)ROUND_UP_TO(algn, (UDATA)_readWriteAreaStart);
 					}
+
+					_cacheHeaderPageStart = (BlockPtr)ROUND_DOWN_TO(algn, (UDATA)_theca);
+					_cacheHeaderPageBytes = (U_32)(ROUND_UP_TO(algn, (UDATA)CASTART(_theca)) - (UDATA)_cacheHeaderPageStart);
+					
+					UDATA headerDbgRWPageBytes = _cacheHeaderPageBytes + ROUND_DOWN_TO(algn, _theca->debugRegionSize + (UDATA)_readWriteAreaBytes);
 					/* Double-check that the numbers are correct */
-					if (((_cacheHeaderPageBytes + _readWriteAreaPageBytes) % _osPageSize) ||
-							((_cacheHeaderPageBytes + _readWriteAreaPageBytes) != roundedHeaderAndRWSize)) {
-						Trc_SHR_Assert_ShouldNeverHappen();
-					}
+					Trc_SHR_Assert_True(headerDbgRWPageBytes == roundedHeaderDbgRWSize);
 				}
 
 				/* CMVC 162844:
@@ -1518,9 +1514,9 @@ SH_CompositeCacheImpl::startup(J9VMThread* currentThread, J9SharedClassPreinitCo
 					} 		
 				}
 
-				if (_doSegmentProtect && (SEGUPDATEPTR(_theca) != CASTART(_theca))) {
+				if (_doSegmentProtect && (SEGUPDATEPTR(_theca) != CASEGSTART(_theca))) {
 					/* If the cache has ROMClass data, notify that the area exists and will be read */
-					notifyPagesRead(CASTART(_theca), SEGUPDATEPTR(_theca), DIRECTION_FORWARD, true);
+					notifyPagesRead(CASEGSTART(_theca), SEGUPDATEPTR(_theca), DIRECTION_FORWARD, true);
 				}
 				/* Update romClassProtectEnd regardless of protect being enabled. This value is 
 				 * used by shrtest which doesn't enable protection until after startup
@@ -3216,7 +3212,7 @@ SH_CompositeCacheImpl::getBaseAddress(void)
 		Trc_SHR_Assert_ShouldNeverHappen();
 		return NULL;
 	}
-	return CASTART(_theca);
+	return CASEGSTART(_theca);
 }
 
 /**
@@ -3349,7 +3345,7 @@ SH_CompositeCacheImpl::getTotalUsableCacheSize(void)
 		Trc_SHR_Assert_ShouldNeverHappen();
 		return 0;
 	}
-	return (CAEND(_theca) - READWRITEAREASTART(_theca));
+	return (CAEND(_theca) - CASTART(_theca));
 }
 
 /**
@@ -3666,7 +3662,7 @@ SH_CompositeCacheImpl::isAddressInMetaDataArea(const void* address) const
 		Trc_SHR_Assert_ShouldNeverHappen();
 		return false;
 	}
-	return ((address >= UPDATEPTR(_theca)) && (address < CADEBUGSTART(_theca)));
+	return ((address >= UPDATEPTR(_theca)) && (address < CAEND(_theca)));
 }
 
 /**
@@ -4044,34 +4040,28 @@ SH_CompositeCacheImpl::notifyRefreshMutexExited(J9VMThread* currentThread)
 	_commonCCInfo->hasRefreshMutexThread = NULL;
 }
 
-/* Since the cache header and the readWrite area may in the same page, protecting and unprotecting
- * these areas must be coordinated. On entry to this function, it should be possible for 3 states:
- * 1) Neither area is protected (another thread is changing the areas)
- * 2) Only the readWrite area is protected (another thread is changing the header)
- * 3) Both areas are protected
- * Entering this function, it is implicit that the header needs to be unprotected, but the readWrite area is optional
- *
+
+/*
  * @param [in] currentThread Point to the J9VMThread struct for the current thread
- * @param [in] changeReadWrite Whether to unprotect the readWrite area
  */
 void
-SH_CompositeCacheImpl::unprotectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite)
+SH_CompositeCacheImpl::unprotectReadWriteArea(J9VMThread* currentThread)
 {
 	if (!_started) {
 		Trc_SHR_Assert_ShouldNeverHappen();
 		return;
 	}
-	if (_doHeaderProtect || (_doHeaderReadWriteProtect && changeReadWrite)) {
-		void* areaStart;
+	if (_doHeaderReadWriteProtect) {
+		void* areaStart = NULL;
 		UDATA areaLength = 0;
-		bool doUnprotectReadWrite;
+		bool doUnprotectReadWrite = true;
 		PORT_ACCESS_FROM_PORT(_portlib);
 
 		if (_readOnlyOSCache) {
 			Trc_SHR_Assert_ShouldNeverHappen();
 			return;
 		}
-		Trc_SHR_CC_unprotectHeaderReadWriteArea_Entry(changeReadWrite);
+		Trc_SHR_CC_unprotectHeaderReadWriteArea_Entry(true);
 
 		if ((J9_ARE_ALL_BITS_SET(*_runtimeFlags, J9SHR_RUNTIMEFLAG_ENABLE_MPROTECT_ALL))
 			&& (!hasReadWriteMutex(currentThread))
@@ -4089,27 +4079,21 @@ SH_CompositeCacheImpl::unprotectHeaderReadWriteArea(J9VMThread* currentThread, b
 				Trc_SHR_CC_unprotectHeaderReadWriteArea_AcquireMutexFailed(currentThread);
 			}
 		}
-		Trc_SHR_CC_unprotectHeaderReadWriteArea_Debug_Pre1(changeReadWrite, _headerProtectCntr, _readWriteProtectCntr);
+		Trc_SHR_CC_unprotectHeaderReadWriteArea_Debug_Pre1(true, _headerProtectCntr, _readWriteProtectCntr);
 		omrthread_monitor_enter(_headerProtectMutex);
-		doUnprotectReadWrite = (changeReadWrite && (_readWriteProtectCntr == 0));
+		doUnprotectReadWrite = (_readWriteProtectCntr == 0);
 		Trc_SHR_CC_unprotectHeaderReadWriteArea_Debug_Post1(doUnprotectReadWrite, _headerProtectCntr, _readWriteProtectCntr);
 
-		if (_doHeaderProtect && (_headerProtectCntr == 0)) {
-			areaStart = (void*)_cacheHeaderPageStart;
-			areaLength = _cacheHeaderPageBytes;
-			_readWriteAreaHeaderIsReadOnly = false;
-			if (doUnprotectReadWrite) {
-				areaLength += _readWriteAreaPageBytes;
-			}
-		} else if (doUnprotectReadWrite && (_readWriteAreaPageStart != 0)) {
+		if (doUnprotectReadWrite && (_readWriteAreaPageStart != 0)) {
 			areaStart = (void*)_readWriteAreaPageStart;
 			areaLength = _readWriteAreaPageBytes;
+			_readWriteAreaIsReadOnly = false;
 		} else {
 			areaStart = NULL;
 		}
 
 		if (areaStart != NULL) {
-			IDATA rc;
+			IDATA rc = 0;
 
 			if ((rc = setRegionPermissions(_portlib, areaStart, areaLength, (J9PORT_PAGE_PROTECT_WRITE | J9PORT_PAGE_PROTECT_READ))) != 0) {
 				I_32 myerror = j9error_last_error_number();
@@ -4118,18 +4102,11 @@ SH_CompositeCacheImpl::unprotectHeaderReadWriteArea(J9VMThread* currentThread, b
 			}
 			if (isVerbosePages() == true) {
 				if (doUnprotectReadWrite) {
-					j9tty_printf(PORTLIB, "Unprotecting cache header and readWrite area - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
-				} else {
-					j9tty_printf(PORTLIB, "Unprotecting cache header - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
-				}
+					j9tty_printf(PORTLIB, "Unprotecting readWrite area - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
+				} 
 			}
 		}
-		if (_doHeaderProtect) {
-			++_headerProtectCntr;
-		}
-		if (changeReadWrite) {
-			++_readWriteProtectCntr;
-		}
+		++_readWriteProtectCntr;
 
 		Trc_SHR_CC_unprotectHeaderReadWriteArea_Debug_Pre2(areaStart, areaLength, _headerProtectCntr, _readWriteProtectCntr);
 		omrthread_monitor_exit(_headerProtectMutex);
@@ -4139,46 +4116,39 @@ SH_CompositeCacheImpl::unprotectHeaderReadWriteArea(J9VMThread* currentThread, b
 	}
 }
 
-/* This function protect the header and readWrite area.
+/* This function protect the readWrite area.
  *
  * @param [in] currentThread Point to the J9VMThread struct for the current thread
- * @param [in] changeReadWrite Whether to protect the readWrite area
  */
 void
-SH_CompositeCacheImpl::protectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite)
+SH_CompositeCacheImpl::protectReadWriteArea(J9VMThread* currentThread)
 {
 	if (!_started) {
 		Trc_SHR_Assert_ShouldNeverHappen();
 		return;
 	}
-	if (_doHeaderProtect || (_doHeaderReadWriteProtect && changeReadWrite)) {
-		void* areaStart;
+	if (_doHeaderReadWriteProtect) {
+		void* areaStart = NULL;
 		U_32 areaLength = 0;
-		bool doProtectReadWrite;
+		bool doProtectReadWrite = true;
 		PORT_ACCESS_FROM_PORT(_portlib);
 
-		Trc_SHR_CC_protectHeaderReadWriteArea_Entry(changeReadWrite);
+		Trc_SHR_CC_protectHeaderReadWriteArea_Entry(true);
 
-		Trc_SHR_CC_protectHeaderReadWriteArea_Debug_Pre1(changeReadWrite, _headerProtectCntr, _readWriteProtectCntr);
+		Trc_SHR_CC_protectHeaderReadWriteArea_Debug_Pre1(true, _headerProtectCntr, _readWriteProtectCntr);
 		omrthread_monitor_enter(_headerProtectMutex);
-		doProtectReadWrite = (changeReadWrite && (_readWriteProtectCntr == 1));
+		doProtectReadWrite = (_readWriteProtectCntr == 1);
 		Trc_SHR_CC_protectHeaderReadWriteArea_Debug_Post1(doProtectReadWrite, _headerProtectCntr, _readWriteProtectCntr);
 
-		if (_doHeaderProtect && (_headerProtectCntr == 1)) {
-			areaStart = (void*)_cacheHeaderPageStart;
-			areaLength = _cacheHeaderPageBytes;
-			_readWriteAreaHeaderIsReadOnly = true;
-			if (doProtectReadWrite) {
-				areaLength += _readWriteAreaPageBytes;
-			}
-		} else if (doProtectReadWrite && (_readWriteAreaPageStart != 0)) {
+		if (doProtectReadWrite && (_readWriteAreaPageStart != 0)) {
 			areaStart = (void*)_readWriteAreaPageStart;
 			areaLength = _readWriteAreaPageBytes;
+			_readWriteAreaIsReadOnly = true;
 		} else {
 			areaStart = NULL;
 		}
 		if (areaStart != NULL) {
-			IDATA rc;
+			IDATA rc = 0;
 
 			if ((rc = setRegionPermissions(_portlib, areaStart, areaLength, J9PORT_PAGE_PROTECT_READ)) != 0) {
 				I_32 myerror = j9error_last_error_number();
@@ -4186,24 +4156,12 @@ SH_CompositeCacheImpl::protectHeaderReadWriteArea(J9VMThread* currentThread, boo
 				Trc_SHR_Assert_ShouldNeverHappen();
 			}
 			if (isVerbosePages() == true) {
-				if (doProtectReadWrite) {
-					j9tty_printf(PORTLIB, "Protecting cache header and readWrite area - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
-				} else {
-					j9tty_printf(PORTLIB, "Protecting cache header - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
-				}
+				j9tty_printf(PORTLIB, "Protecting readWrite area - from %x for %d bytes - rc=%d\n", areaStart, areaLength, rc);
 			}
 		}
-		if (_doHeaderProtect) {
-			if (--_headerProtectCntr < 0) {
-				Trc_SHR_Assert_ShouldNeverHappen();
-			}
+		if (--_readWriteProtectCntr < 0) {
+			Trc_SHR_Assert_ShouldNeverHappen();
 		}
-		if (changeReadWrite) {
-			if (--_readWriteProtectCntr < 0) {
-				Trc_SHR_Assert_ShouldNeverHappen();
-			}
-		}
-
 		Trc_SHR_CC_protectHeaderReadWriteArea_Debug_Pre2(areaStart, areaLength, _headerProtectCntr, _readWriteProtectCntr);
 		omrthread_monitor_exit(_headerProtectMutex);
 		Trc_SHR_CC_protectHeaderReadWriteArea_Debug_Post2(_headerProtectCntr, _readWriteProtectCntr);
@@ -4221,6 +4179,149 @@ SH_CompositeCacheImpl::protectHeaderReadWriteArea(J9VMThread* currentThread, boo
 		}
 		Trc_SHR_CC_protectHeaderReadWriteArea_Exit();
 	}
+}
+
+void
+SH_CompositeCacheImpl::unprotectHeader(J9VMThread* currentThread)
+{
+	if (!_started) {
+		Trc_SHR_Assert_ShouldNeverHappen();
+		return;
+	}
+	if (_doHeaderProtect) {
+		void* areaStart = NULL;
+		UDATA areaLength = 0;
+		PORT_ACCESS_FROM_PORT(_portlib);
+
+		if (_readOnlyOSCache) {
+			Trc_SHR_Assert_ShouldNeverHappen();
+			return;
+		}
+		
+		Trc_SHR_CC_unprotectHeader_Entry(currentThread);
+
+		if ((J9_ARE_ALL_BITS_SET(*_runtimeFlags, J9SHR_RUNTIMEFLAG_ENABLE_MPROTECT_ALL))
+			&& (!hasReadWriteMutex(currentThread))
+		) {
+			/* readWriteMutex need to be held when we are unprotecting the header with option mprotect=all */
+			SH_OSCache* oscacheToUse = ((_ccHead == NULL) ? _oscache : _ccHead->_oscache);
+			IDATA readWriteAreaMutexAcquired = oscacheToUse->acquireWriteLock(_commonCCInfo->readWriteAreaMutexID);
+
+			if (0 == readWriteAreaMutexAcquired) {
+				/* If we acquired readWriteMutex here, it will be released in the next call of protectHeaderReadWriteArea()*/
+				Trc_SHR_Assert_Equals(NULL, _commonCCInfo->hasRWMutexThreadMprotectAll);
+				_commonCCInfo->hasReadWriteMutexThread = currentThread;
+				_commonCCInfo->hasRWMutexThreadMprotectAll = currentThread;
+			} else {
+				Trc_SHR_CC_unprotectHeader_AcquireMutexFailed(currentThread);
+			}
+		}
+		Trc_SHR_CC_unprotectHeader_Debug_Pre1(currentThread, _headerProtectCntr);
+		omrthread_monitor_enter(_headerProtectMutex);
+		Trc_SHR_CC_unprotectHeader_Debug_Post1(currentThread, _headerProtectCntr);
+
+		if (_headerProtectCntr == 0) {
+			areaStart = (void*)_cacheHeaderPageStart;
+			areaLength = _cacheHeaderPageBytes;
+		} else {
+			areaStart = NULL;
+		}
+
+		if (areaStart != NULL) {
+			IDATA rc = 0;
+
+			if ((rc = setRegionPermissions(_portlib, areaStart, areaLength, (J9PORT_PAGE_PROTECT_WRITE | J9PORT_PAGE_PROTECT_READ))) != 0) {
+				I_32 myerror = j9error_last_error_number();
+				Trc_SHR_CC_unprotectHeader_setRegionPermissions_Failed(currentThread, myerror);
+				Trc_SHR_Assert_ShouldNeverHappen();
+			}
+			if (isVerbosePages() == true) {
+				j9tty_printf(PORTLIB, "Unprotecting cache header - from %p for %d bytes - rc=%d\n", areaStart, areaLength, rc);
+			}
+		}
+		++_headerProtectCntr;
+		Trc_SHR_CC_unprotectHeader_Debug_Pre2(currentThread, _headerProtectCntr);
+		omrthread_monitor_exit(_headerProtectMutex);
+		Trc_SHR_CC_unprotectHeader_Debug_Post2(currentThread, _headerProtectCntr);
+		Trc_SHR_CC_unprotectHeader_Exit(currentThread);
+	}
+}
+
+void
+SH_CompositeCacheImpl::protectHeader(J9VMThread* currentThread)
+{
+	if (!_started) {
+		Trc_SHR_Assert_ShouldNeverHappen();
+		return;
+	}
+	if (_doHeaderProtect) {
+		void* areaStart = NULL;
+		U_32 areaLength = 0;
+		PORT_ACCESS_FROM_PORT(_portlib);
+		
+		Trc_SHR_CC_protectHeader_Entry(currentThread);
+		Trc_SHR_CC_protectHeader_Debug_Pre1(currentThread, _headerProtectCntr);
+		omrthread_monitor_enter(_headerProtectMutex);
+		Trc_SHR_CC_protectHeader_Debug_Post1(currentThread, _headerProtectCntr);
+		if (_doHeaderProtect && (_headerProtectCntr == 1)) {
+			areaStart = (void*)_cacheHeaderPageStart;
+			areaLength = _cacheHeaderPageBytes;
+		} else {
+			areaStart = NULL;
+		}
+		if (areaStart != NULL) {
+			IDATA rc = 0;
+
+			if ((rc = setRegionPermissions(_portlib, areaStart, areaLength, J9PORT_PAGE_PROTECT_READ)) != 0) {
+				I_32 myerror = j9error_last_error_number();
+				Trc_SHR_CC_protectHeader_setRegionPermissions_Failed(currentThread, myerror);
+				Trc_SHR_Assert_ShouldNeverHappen();
+			}
+			if (isVerbosePages() == true) {
+				j9tty_printf(PORTLIB, "Protecting cache header - from %p for %d bytes - rc=%d\n", areaStart, areaLength, rc);
+			}
+		}
+		
+		if (--_headerProtectCntr < 0) {
+			Trc_SHR_Assert_ShouldNeverHappen();
+		}
+		Trc_SHR_CC_protectHeader_Debug_Pre2(currentThread, _headerProtectCntr);
+		omrthread_monitor_exit(_headerProtectMutex);
+		Trc_SHR_CC_protectHeader_Debug_Post2(currentThread, _headerProtectCntr);
+
+		if (_commonCCInfo->hasRWMutexThreadMprotectAll == currentThread) {
+			SH_OSCache* oscacheToUse = ((_ccHead == NULL) ? _oscache : _ccHead->_oscache);
+			IDATA readWriteMutexReleased = 0;
+
+			Trc_SHR_Assert_Equals(currentThread, _commonCCInfo->hasReadWriteMutexThread);
+			_commonCCInfo->hasReadWriteMutexThread = NULL;
+			_commonCCInfo->hasRWMutexThreadMprotectAll = NULL;
+			readWriteMutexReleased = oscacheToUse->releaseWriteLock(_commonCCInfo->readWriteAreaMutexID);
+			if (0 != readWriteMutexReleased) {
+				Trc_SHR_CC_protectHeader_ReleaseMutexFailed(currentThread);
+			}
+		}
+		Trc_SHR_CC_protectHeader_Exit(currentThread);
+	}
+}
+
+void
+SH_CompositeCacheImpl::unprotectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite)
+{
+	/* todo @hangshao No need to protect/unprotect RW area and header together anymore. They are seperate now. */  
+	unprotectHeader(currentThread);
+	if (changeReadWrite) {
+		unprotectReadWriteArea(currentThread);
+	}	
+}
+
+void
+SH_CompositeCacheImpl::protectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite)
+{
+	protectHeader(currentThread);
+	if (changeReadWrite) {
+		protectReadWriteArea(currentThread);
+	}	
 }
 
 /* Unprotects the whole metadata area. This is only done if the cache is locked */
@@ -4247,7 +4348,7 @@ SH_CompositeCacheImpl::unprotectMetadataArea()
 
 		areaStart = (BlockPtr)_scan;
 		areaStart = (BlockPtr)ROUND_DOWN_TO(_osPageSize, (UDATA)areaStart);
-		areaLength = (U_32)((BlockPtr)CADEBUGSTART(_theca) - (BlockPtr)areaStart);
+		areaLength = (U_32)((BlockPtr)CAEND(_theca) - (BlockPtr)areaStart);
 		if ((rc = setRegionPermissions(_portlib, (void*)areaStart, areaLength, (J9PORT_PAGE_PROTECT_WRITE | J9PORT_PAGE_PROTECT_READ))) != 0) {
 			I_32 myerror = j9error_last_error_number();
 			Trc_SHR_CC_unprotectMetadataArea_setRegionPermissions_Failed(myerror);
@@ -4289,7 +4390,7 @@ SH_CompositeCacheImpl::protectMetadataArea(J9VMThread *currentThread)
 		} else {
 			areaStart = (BlockPtr)ROUND_UP_TO(_osPageSize, (UDATA)areaStart);
 		}
-		areaLength = (U_32)((BlockPtr)CADEBUGSTART(_theca) - (BlockPtr)areaStart);
+		areaLength = (U_32)((BlockPtr)CAEND(_theca) - (BlockPtr)areaStart);
 		if ((rc = setRegionPermissions(_portlib, (void*)areaStart, areaLength, J9PORT_PAGE_PROTECT_READ)) != 0) {
 			I_32 myerror = j9error_last_error_number();
 			Trc_SHR_CC_protectMetadataArea_setRegionPermissions_Failed(myerror);
@@ -4348,13 +4449,13 @@ SH_CompositeCacheImpl::getCacheCRC(void)
 	Trc_SHR_CC_getCacheCRC_Entry();
 
 	/* CRC from the start of the ROMClass area to the end of the ROMClass area */
-	areaForCrc = (U_8*)CASTART(_theca);
+	areaForCrc = (U_8*)CASEGSTART(_theca);
 	areaForCrcSize = (U_32)((U_8*)SEGUPDATEPTR(_theca) - areaForCrc);
 	value += getCacheAreaCRC(areaForCrc, areaForCrcSize);
 
 	/* CRC from the start of the metadata area to the end of the cache */
 	areaForCrc = (U_8*)UPDATEPTR(_theca);
-	areaForCrcSize = (U_32)((U_8*)CADEBUGSTART(_theca) - areaForCrc);
+	areaForCrcSize = (U_32)((U_8*)CAEND(_theca) - areaForCrc);
 	value += getCacheAreaCRC(areaForCrc, areaForCrcSize);
 
 	Trc_SHR_CC_getCacheCRC_Exit(value, _theca->crcValue);
@@ -4478,11 +4579,11 @@ SH_CompositeCacheImpl::getJavacoreData(J9JavaVM *vm, J9SharedClassJavacoreDataDe
 
 	if (isCacheInitComplete()) {
 		/* ROMClass start/end obviously doesn't make sense for cachelets */
-		descriptor->romClassStart = CASTART(_theca); /* getBaseAddress() */
+		descriptor->romClassStart = CASEGSTART(_theca); /* getBaseAddress() */
 		descriptor->romClassEnd = SEGUPDATEPTR(_theca); /* getSegmentAllocPtr() */
 		descriptor->metadataStart = UPDATEPTR(_theca); /* getMetaAllocPtr() */
 		descriptor->cacheEndAddress = CAEND(_theca); /* getCacheEndAddress() */
-		descriptor->cacheSize = CAEND(_theca) - READWRITEAREASTART(_theca); /* getTotalUsableCacheSize() */
+		descriptor->cacheSize = CAEND(_theca) - CASTART(_theca); /* getTotalUsableCacheSize() */
 		descriptor->readWriteBytes = (UDATA)READWRITEAREASIZE(_theca); /* getReadWriteBytes() */
 
 		descriptor->extraFlags = _theca->extraFlags;
@@ -4540,9 +4641,9 @@ SH_CompositeCacheImpl::updateMetadataSegment(J9VMThread* currentThread)
  * This function can only be called when this mutex is acquired.
  */
 BOOLEAN
-SH_CompositeCacheImpl::isReadWriteAreaHeaderReadOnly()
+SH_CompositeCacheImpl::isReadWriteAreaReadOnly()
 {
-	return _readWriteAreaHeaderIsReadOnly;
+	return _readWriteAreaIsReadOnly;
 }
 
 SH_CompositeCacheImpl*
@@ -6650,6 +6751,16 @@ SH_CompositeCacheImpl::getCacheNameWithVGen(void) const
 	return _oscache->getCacheNameWithVGen();
 }
 
+
+/**
+ * Return the cache file name.
+ */
+const char* 
+SH_CompositeCacheImpl::getCacheFullPathName(void) const
+{
+	return _oscache->getCacheFullPathName();
+}
+
 /* Get a SH_OSCache_Info of a non-top layer cache.
  * 
  * @param[in] vm The current J9JavaVM
@@ -6678,5 +6789,239 @@ bool
 SH_CompositeCacheImpl::hasReadMutex(J9VMThread* currentThread) const
 {
 	return J9_ARE_ALL_BITS_SET(currentThread->privateFlags2, J9_PRIVATE_FLAGS2_IN_SHARED_CACHE_READ_MUTEX);
+}
+
+bool
+SH_CompositeCacheImpl::fixAndWriteOSCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 size)
+{
+	return _oscache->fixAndWriteOSCacheHeader(currentThread, fd, size);
+}
+
+bool
+SH_CompositeCacheImpl::fixAndWriteJ9SharedCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 freeDebugSpaceToChange, I_32 freeSpaceToChange)
+{
+	bool rc = false;
+	PORT_ACCESS_FROM_PORT(_portlib);
+	IDATA headerSize = sizeof(J9SharedCacheHeader);
+	J9SharedCacheHeader *headerCopy = (J9SharedCacheHeader*)j9mem_allocate_memory(headerSize, J9MEM_CATEGORY_VM);
+
+	if (NULL == headerCopy) {
+		CC_ERR_TRACE(J9NLS_SHRC_OSCACHE_ALLOC_FAILED);
+		goto done;
+	}
+	memcpy(headerCopy, _theca, headerSize);
+	
+	headerCopy->totalBytes += (freeDebugSpaceToChange + freeSpaceToChange);
+	headerCopy->updateSRP += (freeDebugSpaceToChange + freeSpaceToChange);
+	headerCopy->segmentSRP += freeDebugSpaceToChange;
+	headerCopy->crcValid = 0; /* segment will be changed, so set crcValid 0 */
+	/* A flag can be added in extraFlags to indicate the cache has been resized for debugging purpose. */
+	headerCopy->debugRegionSize += freeDebugSpaceToChange;
+	headerCopy->localVariableTableNextSRP += freeDebugSpaceToChange;
+	headerCopy->sharedStringHead += freeDebugSpaceToChange;
+	headerCopy->sharedStringTail += freeDebugSpaceToChange;
+	/* 
+	 * Unset minAOT/maxAOT/minJIT/maxJIT/softMaxBytes. As the cache is being resized, no need to care about such limits set on the orignal cache.
+	 * In addition, the original values might not be feasible anymore.
+	 * (e.g. minAOT + minJIT could become greater than new totalBytes, softMaxBytes could become smaller than used bytes in the new cache).
+	 */
+	headerCopy->minAOT = -1;
+	headerCopy->maxAOT = -1;
+	headerCopy->minJIT = -1;
+	headerCopy->maxJIT = -1;
+	headerCopy->softMaxBytes = (U_32)-1;
+	if (headerCopy->cacheFullFlags > 0) {
+		if (freeSpaceToChange > 0) {
+			/* Unset cacheFullFlags if the cache size is being increased. */
+			headerCopy->cacheFullFlags = 0;
+		}
+	}
+
+	if (headerSize != j9file_write(fd, (void*)headerCopy, headerSize)) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		goto done;
+	}
+	rc = true;
+done:
+	if (NULL != headerCopy) {
+		j9mem_free_memory(headerCopy);
+	}
+	return rc;
+}
+
+bool
+SH_CompositeCacheImpl::fixAndWriteDebugAreaAndClassSegment(J9VMThread* currentThread, IDATA fd, I_32 freeDebugSpaceToChange)
+{
+	PORT_ACCESS_FROM_VMC(currentThread);
+	I_32 debugAreaSize = (I_32)getDebugBytes();
+	I_32 LNTSize = (I_32)getLineNumberTableBytes();
+	BlockPtr LNTCopy = NULL;
+	BlockPtr debugStartAddr = (BlockPtr)getClassDebugDataStartAddress();
+	I_32 readWriteBytes = (I_32)getReadWriteBytes();
+
+	if (debugAreaSize >0) {
+		j9file_seek(fd, debugAreaSize + freeDebugSpaceToChange + readWriteBytes, EsSeekCur);
+		if (LNTSize > 0) {
+			LNTCopy = (BlockPtr)j9mem_allocate_memory(LNTSize, J9MEM_CATEGORY_VM);
+			if (NULL == LNTCopy) {
+				CC_ERR_TRACE(J9NLS_SHRC_OSCACHE_ALLOC_FAILED);
+				return false;
+			}
+			memcpy(LNTCopy, debugStartAddr, LNTSize);
+		}
+	}
+
+	BlockPtr walk = (BlockPtr)getBaseAddress();
+	BlockPtr prev = NULL;
+	BlockPtr endOfROMSegment = (BlockPtr)getSegmentAllocPtr();
+	I_32 romSegBytesWritten = 0;
+	while (walk < endOfROMSegment) {
+		U_32 romSize = ((J9ROMClass*)walk)->romSize;
+		J9ROMClass *romClassCopy = (J9ROMClass *)j9mem_allocate_memory(romSize, J9MEM_CATEGORY_VM);
+		if (NULL == romClassCopy) {
+			j9mem_free_memory(LNTCopy);
+			CC_ERR_TRACE(J9NLS_SHRC_OSCACHE_ALLOC_FAILED);
+			return false;
+		}
+		memcpy(romClassCopy, walk, romSize);
+		
+		J9ROMMethod *romMethod = J9ROMCLASS_ROMMETHODS((J9ROMClass*)walk);
+		U_32 romMethodCount = 0;
+
+		while (romMethodCount < ((J9ROMClass*)walk)->romMethodCount) {
+			if (J9ROMMETHOD_HAS_DEBUG_INFO(romMethod)) {
+				J9MethodDebugInfo* debugInfo = methodDebugInfoFromROMMethod(romMethod);
+				if (1 ==(debugInfo->srpToVarInfo & 1)) {
+					/**
+					 * low tag indicates that the debug information is stored inline
+					 * in the method, do nothing in this case.
+					 */
+				} else {
+					/** 
+					 * not low tag, debug information is stored out of line
+					 * and this is an SRP to it. 
+					 */
+
+					UDATA offset = (UDATA)debugInfo - (UDATA)walk;
+					Trc_SHR_Assert_True((UDATA)debugInfo > (UDATA)walk);
+					Trc_SHR_Assert_True(offset < (UDATA)romSize);
+					J9SRP* debugInfoSRPinCopy = (J9SRP*)((BlockPtr)romClassCopy + offset);
+					*debugInfoSRPinCopy -= freeDebugSpaceToChange; /* This is SRP to Debuginfo */
+
+					debugInfo = SRP_PTR_GET(debugInfo, J9MethodDebugInfo *);
+					Trc_SHR_Assert_True(NULL != LNTCopy);
+					offset = (UDATA)(&debugInfo->srpToVarInfo) - (UDATA)debugStartAddr;
+					Trc_SHR_Assert_True((I_32)offset < LNTSize);
+					J9SRP* srpToVarInfoinCopy = (J9SRP*)((BlockPtr)LNTCopy + offset);
+					*srpToVarInfoinCopy += freeDebugSpaceToChange; /* This is SRP to LVT */
+				}
+			}
+			romMethod = J9_NEXT_ROM_METHOD(romMethod);
+			romMethodCount++;
+		}
+		if (romSize != (U_32)j9file_write(fd, (void*)romClassCopy, romSize)) {
+			I_32 errorno = j9error_last_error_number();
+			const char * errormsg = j9error_last_error_message();
+
+			j9mem_free_memory(romClassCopy);
+			j9mem_free_memory(LNTCopy);
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+			Trc_SHR_Assert_True(errormsg != NULL);
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+			return false;
+		}
+		romSegBytesWritten += romSize;
+		j9mem_free_memory(romClassCopy);
+		prev = walk;
+		walk = walk + romSize;
+		/* Simply check that we didn't walk backwards, zero or beyond the end of the segment */
+		if ((walk <= prev) || (walk > endOfROMSegment)) {
+			CC_ERR_TRACE1(J9NLS_SHRC_CM_READ_CORRUPT_ROMCLASS, walk);
+			setCorruptCache(currentThread, ROMCLASS_CORRUPT, (UDATA)walk);
+			j9mem_free_memory(LNTCopy);
+			return false;
+		}
+	}
+
+	j9file_seek(fd, -(debugAreaSize + freeDebugSpaceToChange + readWriteBytes + romSegBytesWritten), EsSeekCur);
+	if (LNTSize != j9file_write(fd, (void*)LNTCopy, LNTSize)) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+		
+		j9mem_free_memory(LNTCopy);
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		return false;
+	}
+	j9mem_free_memory(LNTCopy);
+
+	j9file_seek(fd, getFreeDebugSpaceBytes() + freeDebugSpaceToChange, EsSeekCur);
+	U_32 LVTsize = getLocalVariableTableBytes();
+	if (LVTsize > 0) {
+		if (LVTsize != (U_32)j9file_write(fd, WSRP_GET(_theca->localVariableTableNextSRP, void*), LVTsize)) {
+			I_32 errorno = j9error_last_error_number();
+			const char * errormsg = j9error_last_error_message();
+
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+			Trc_SHR_Assert_True(errormsg != NULL);
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool
+SH_CompositeCacheImpl::writeReadWriteArea(J9VMThread* currentThread, IDATA fd)
+{
+	PORT_ACCESS_FROM_PORT(_portlib);
+	I_32 readWriteBytes = (I_32)getReadWriteBytes();
+	bool rc = true;
+	Trc_SHR_Assert_True(0 <= readWriteBytes);
+	if (0 < readWriteBytes) {
+		void* stringTable = getStringTableBase();
+		if (readWriteBytes != j9file_write(fd, stringTable, readWriteBytes)) {
+			I_32 errorno = j9error_last_error_number();
+			const char * errormsg = j9error_last_error_message();
+
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+			Trc_SHR_Assert_True(errormsg != NULL);
+			CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+			rc = false;
+		}
+	}
+	return rc;
+}
+
+bool
+SH_CompositeCacheImpl::writeMetaDataArea(J9VMThread* currentThread, IDATA fd)
+{
+	PORT_ACCESS_FROM_PORT(_portlib);
+	bool rc = false;
+	I_32 metaDataBytes = (I_32)getMetadataBytes();
+	Trc_SHR_Assert_True(metaDataBytes > 0);
+	if (-1 != j9file_seek(fd, -metaDataBytes, EsSeekEnd)) {
+		void* metaAllocPtr = getMetaAllocPtr();
+		Trc_SHR_Assert_True(NULL != metaAllocPtr);
+		if (metaDataBytes == j9file_write(fd, metaAllocPtr, metaDataBytes)) {
+			rc = true;
+		} 
+	}
+	if (!rc) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CC_ERR_TRACE1(J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+	}
+	return rc;
 }
 

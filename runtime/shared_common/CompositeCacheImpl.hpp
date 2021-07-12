@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -248,7 +248,7 @@ public:
 
 	void updateMetadataSegment(J9VMThread* currentThread);
 	
-	BOOLEAN isReadWriteAreaHeaderReadOnly();
+	BOOLEAN isReadWriteAreaReadOnly();
 
 	SH_CompositeCacheImpl* getNext(void);
 	
@@ -392,8 +392,20 @@ public:
 	void setMetadataMemorySegment(J9MemorySegment** segment);
 	
 	const char* getCacheNameWithVGen(void) const;
-	
+
 	bool hasReadMutex(J9VMThread* currentThread) const;
+
+	const char* getCacheFullPathName(void) const;
+	
+	bool fixAndWriteOSCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 size);
+	
+	bool fixAndWriteJ9SharedCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 freeDebugSpaceToChange, I_32 freeSpaceToChange);
+	
+	bool writeReadWriteArea(J9VMThread* currentThread, IDATA fd);
+	
+	bool fixAndWriteDebugAreaAndClassSegment(J9VMThread* currentThread, IDATA fd, I_32 freeDebugSpaceToChange);
+	
+	bool writeMetaDataArea(J9VMThread* currentThread, IDATA fd);
 
 private:
 	J9SharedClassConfig* _sharedClassConfig;
@@ -458,7 +470,7 @@ private:
 	
 	bool _doReadWriteSync;
 	bool _doHeaderReadWriteProtect;
-	bool _readWriteAreaHeaderIsReadOnly;
+	bool _readWriteAreaIsReadOnly;
 	bool _doHeaderProtect;
 	bool _doSegmentProtect;
 	bool _doMetaProtect;
@@ -521,6 +533,12 @@ private:
 
 	void unprotectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite);
 	void protectHeaderReadWriteArea(J9VMThread* currentThread, bool changeReadWrite);
+
+	void unprotectReadWriteArea(J9VMThread* currentThread);
+	void protectReadWriteArea(J9VMThread* currentThread);
+	
+	void unprotectHeader(J9VMThread* currentThread);
+	void protectHeader(J9VMThread* currentThread);
 	
 	void unprotectMetadataArea();
 	void protectMetadataArea(J9VMThread *currentThread);

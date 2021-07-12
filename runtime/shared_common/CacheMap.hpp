@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -66,7 +66,7 @@ typedef struct MethodSpecTable {
 } MethodSpecTable;
 
 typedef struct CacheAddressRange {
-	void* cacheHeader;
+	void* cacheBase;
 	void* cacheEnd;
 } CacheAddressRange;
 
@@ -278,6 +278,8 @@ public:
 	void getUnstoredBytes(U_32 *softmxUnstoredBytes, U_32 *maxAOTUnstoredBytes, U_32 *maxJITUnstoredBytes) const;
 	
 	bool isAddressInCache(const void *address, UDATA length, bool includeHeaderReadWriteArea, bool useCcHeadOnly) const;
+	
+	bool resizeCache(J9VMThread* currentThread, U_32 newSize);
 
 private:
 	SH_CompositeCacheImpl* _cc;					/* current cache */
@@ -443,7 +445,7 @@ private:
 	
 	void setCacheAddressRangeArray(void);
 	
-	void getJ9ShrOffsetFromAddress(const void* address, J9ShrOffset* offset);
+	void getJ9ShrOffsetFromAddress(const void* address, bool offsetFromBaseAddress, J9ShrOffset* offset);
 	
 	UDATA getJavacoreData(J9JavaVM *vm, J9SharedClassJavacoreDataDescriptor* descriptor, bool topLayerOnly);
 	

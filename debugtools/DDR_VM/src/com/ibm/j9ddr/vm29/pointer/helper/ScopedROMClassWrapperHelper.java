@@ -29,6 +29,7 @@ import com.ibm.j9ddr.vm29.pointer.generated.J9ShrOffsetPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.ScopedROMClassWrapperPointer;
 import com.ibm.j9ddr.vm29.types.I32;
 import com.ibm.j9ddr.vm29.types.UDATA;
+import com.ibm.j9ddr.vm29.types.IDATA;
 
 public class ScopedROMClassWrapperHelper {
 	// #define RCWMODCONTEXT(srcw) (J9SHR_READSRP(srcw->modContextOffset) ? (((U_8*)(srcw)) + J9SHR_READSRP((srcw)->modContextOffset)) : 0)
@@ -42,7 +43,7 @@ public class ScopedROMClassWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(modContextOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					return cacheHeader[layer].add(offset);
@@ -66,7 +67,7 @@ public class ScopedROMClassWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(partitionOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					return cacheHeader[layer].add(offset);

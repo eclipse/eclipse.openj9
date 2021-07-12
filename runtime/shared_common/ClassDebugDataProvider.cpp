@@ -24,14 +24,15 @@
  * Class Debug Data Layout:
  * The class debug data is laid out as illustrated below:
  *
- * *--------------------*--------------------*----------------*
+ * *-----------------*--------------------*-------------------*
  * | J9RomClass:     |                    | J9RomClass:       |
  * | LineNumberTable | ... free space ... | LocalVariableTable|
  * |                 |                    |                   |
- * *--------------------*--------------------*----------------*
+ * *-----------------*--------------------*-------------------*
  */
 
 #include "ClassDebugDataProvider.hpp"
+#include "UnitTest.hpp"
 #include "sharedconsts.h"
 #include "ut_j9shr.h"
 #include "j9shrnls.h"
@@ -39,10 +40,10 @@
 
 #define CREATE_CLASS_DEBUG_AREA 1
 
-/*Note: GET_DEBUG_MEM is the same as CADEBUGSTART*/
+/*Note: GET_DEBUG_MEM_START is the same as CASTART*/
 typedef char* BlockPtr;
-#define GET_DEBUG_MEM_START(ca) (((BlockPtr)(ca)) + (ca)->totalBytes - (ca)->debugRegionSize)
-#define GET_DEBUG_MEM_END(ca) (((BlockPtr)(ca)) + (ca)->totalBytes)
+#define GET_DEBUG_MEM_START(ca) (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader))
+#define GET_DEBUG_MEM_END(ca) (((BlockPtr)(ca)) + sizeof(J9SharedCacheHeader) + (ca)->debugRegionSize)
 #define GET_DEBUG_LENTH(ca) ((U_32)((ca)->debugRegionSize))
 #define GET_DEBUG_FLAGS(ca) ((ca)->extraFlags)
 
@@ -276,7 +277,7 @@ ClassDebugDataProvider::allocateClassDebugData(J9VMThread* currentThread, U_16 c
 				UDATA pageSize = this->_theca->osPageSize;
 
 				/* Mark the page as read-write where data is to be written */
-				permSetter->changePartialPageProtection(currentThread, pieces->lineNumberTable, false);
+				changePartialPageProtection(currentThread, permSetter, pieces->lineNumberTable, false);
 				
 				/* In case lineNumberTable data spills to page pointed by localVariableTable,
 				 * then the page pointed by localVariableTable also needs to be marked as read-write.
@@ -290,7 +291,7 @@ ClassDebugDataProvider::allocateClassDebugData(J9VMThread* currentThread, U_16 c
 					BlockPtr lvtStartPage = (BlockPtr)ROUND_DOWN_TO(pageSize, (UDATA)lvtStart);
 
 					if (lntEndPage == lvtStartPage) {
-						permSetter->changePartialPageProtection(currentThread, lntEnd, false);
+						changePartialPageProtection(currentThread, permSetter, lntEnd, false);
 					}
 				}
 			}
@@ -309,7 +310,7 @@ ClassDebugDataProvider::allocateClassDebugData(J9VMThread* currentThread, U_16 c
 				UDATA pageSize = this->_theca->osPageSize;
 
 				/* Mark the page as read-write where data is to be written */
-				permSetter->changePartialPageProtection(currentThread, (void *)((UDATA)pieces->localVariableTable + sizes->localVariableTableSize), false);
+				changePartialPageProtection(currentThread, permSetter, (void *)((UDATA)pieces->localVariableTable + sizes->localVariableTableSize), false);
 				
 				/* In case localVariableTable data spills to page pointed by lineNumberTable,
 				 * then the page pointed by lineNumberTable also needs to be marked as read-write.
@@ -322,7 +323,7 @@ ClassDebugDataProvider::allocateClassDebugData(J9VMThread* currentThread, U_16 c
 					BlockPtr lntStartPage = (BlockPtr)ROUND_DOWN_TO(pageSize, (UDATA)lntStart);
 
 					if (lvtStartPage == lntStartPage) {
-						permSetter->changePartialPageProtection(currentThread, pieces->localVariableTable, false);
+						changePartialPageProtection(currentThread, permSetter, pieces->localVariableTable, false);
 					}
 				}
 			}
@@ -374,8 +375,8 @@ ClassDebugDataProvider::rollbackClassDebugData(J9VMThread* currentThread, U_16 c
 	 * we need to restore their state to read-only when rolling back.
 	 */
 	if (NULL != permSetter) {
-		permSetter->changePartialPageProtection(currentThread, getLNTNextAddress(), true);
-		permSetter->changePartialPageProtection(currentThread, getLVTNextAddress(), true);
+		changePartialPageProtection(currentThread, permSetter, getLNTNextAddress(), true);
+		changePartialPageProtection(currentThread, permSetter, getLVTNextAddress(), true);
 	}
 	Trc_SHR_ClassDebugData_rollbackClassDebugData_Exit(currentThread, classnameLength, classnameData, _storedLineNumberTableBytes, _storedLocalVariableTableBytes);
 }
@@ -440,10 +441,10 @@ ClassDebugDataProvider::commitClassDebugData(J9VMThread* currentThread, U_16 cla
 
 	if (NULL != permSetter) {
 		if (preCommitLineNumberTableBytes > 0) {
-			permSetter->changePartialPageProtection(currentThread, lntNextAddr, true);
+			changePartialPageProtection(currentThread, permSetter, lntNextAddr, true);
 		}
 		if (preCommitLocalVariableTableBytes > 0) {
-			permSetter->changePartialPageProtection(currentThread, lvtNextAddr, true);
+			changePartialPageProtection(currentThread, permSetter, lvtNextAddr, true);
 		}
 	}
 
@@ -686,6 +687,21 @@ ClassDebugDataProvider::setPermission(J9VMThread* currentThread, AbstractMemoryP
 	if (pageSize > 0) {
 		bool doVerbosePages = permSetter->isVerbosePages();
 		UDATA pageProtectFlag = J9PORT_PAGE_PROTECT_READ;
+		
+		
+		if ((UnitTest::CLASS_DEBUG_DATA_TEST != UnitTest::unitTest)
+			&& (ROUND_DOWN_TO(pageSize, (UDATA)lntProtectLow) < (UDATA)GET_DEBUG_MEM_START(_theca))
+		) {
+			/* Do not change the memory protection of header page. The header page is handled by (un)protectHeaderReadWriteArea(). */
+			lntProtectLow = (void*)ROUND_UP_TO(pageSize, (UDATA)lntProtectLow);
+			if (ROUND_DOWN_TO(pageSize, (UDATA)lntProtectHigh) < (UDATA)GET_DEBUG_MEM_START(_theca)) {
+				/* Only touches the header page, do nothing here. The header page is handled by (un)protectHeaderReadWriteArea().
+				 * In the case of unprotecting, the header page is already unprotected by j9shr_classStoreTransaction_createSharedClass() 
+				 * before reaching here.
+				 */
+				goto done;
+			}
+		}
 
 		if (!readOnly) {
 			pageProtectFlag = J9PORT_PAGE_PROTECT_READ | J9PORT_PAGE_PROTECT_WRITE;
@@ -920,8 +936,8 @@ ClassDebugDataProvider::protectPartiallyFilledPages(J9VMThread* currentThread, A
 	void *lvtStartAddr = getLVTNextAddress();
 
 	if (NULL != permSetter) {
-		permSetter->changePartialPageProtection(currentThread, lntStartAddr, true, phaseCheck);
-		permSetter->changePartialPageProtection(currentThread, lvtStartAddr, true, phaseCheck);
+		changePartialPageProtection(currentThread, permSetter, lntStartAddr, true, phaseCheck);
+		changePartialPageProtection(currentThread, permSetter, lvtStartAddr, true, phaseCheck);
 	}
 }
 
@@ -941,8 +957,22 @@ ClassDebugDataProvider::unprotectPartiallyFilledPages(J9VMThread* currentThread,
 	void *lvtStartAddr = getLVTNextAddress();
 
 	if (NULL != permSetter) {
-		permSetter->changePartialPageProtection(currentThread, lntStartAddr, false, phaseCheck);
-		permSetter->changePartialPageProtection(currentThread, lvtStartAddr, false, phaseCheck);
+		changePartialPageProtection(currentThread, permSetter, lntStartAddr, false, phaseCheck);
+		changePartialPageProtection(currentThread, permSetter, lvtStartAddr, false, phaseCheck);
 	}
+}
+
+void
+ClassDebugDataProvider::changePartialPageProtection(J9VMThread *currentThread, AbstractMemoryPermission * permSetter, void *addr, bool readOnly, bool phaseCheck)
+{
+	UDATA pageSize = this->_theca->osPageSize;
+	/* If it touches the header page, do nothing here. The header page is handled by (un)protectHeaderReadWriteArea(). */
+	bool skip = (0 == pageSize) || (ROUND_DOWN_TO(pageSize, (UDATA)addr) < (UDATA)GET_DEBUG_MEM_START(_theca));
+	skip = skip && (UnitTest::CLASS_DEBUG_DATA_TEST != UnitTest::unitTest);
+	if (skip) {
+		
+		return;
+	}
+	permSetter->changePartialPageProtection(currentThread, addr, readOnly, phaseCheck);
 }
 

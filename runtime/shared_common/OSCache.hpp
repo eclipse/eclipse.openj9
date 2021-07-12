@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2019 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -61,7 +61,7 @@
 #define OSCACHE_LOWEST_ACTIVE_GEN 1
 
 /* Always increment this value by 2. For testing we use the (current generation - 1) and expect the cache contents to be compatible. */
-#define OSCACHE_CURRENT_CACHE_GEN 41
+#define OSCACHE_CURRENT_CACHE_GEN 43
 #define OSCACHE_CURRENT_LAYER_LAYER 0
 
 #define J9SH_VERSION(versionMajor, versionMinor) (versionMajor*100 + versionMinor)
@@ -222,6 +222,8 @@ public:
 	bool isRunningReadOnly();
 	
 	U_32 getCacheType();
+	
+	const char* getCacheFullPathName() const;
 
 	virtual bool startup(J9JavaVM* vm, const char* cacheDirName, UDATA cacheDirPerm, const char* cacheName, J9SharedClassPreinitConfig* piconfig_, IDATA numLocks,
 			UDATA createFlag, UDATA verboseFlags, U_64 runtimeFlags, I_32 openMode, UDATA storageKeyTesting, J9PortShcVersion* versionData, SH_OSCacheInitializer* i, UDATA reason) = 0;
@@ -271,6 +273,8 @@ public:
 	virtual void  dontNeedMetadata(J9VMThread* currentThread, const void* startAddress, size_t length);
 	
 	virtual IDATA detach(void) = 0;
+	
+	virtual bool fixAndWriteOSCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 size) = 0;
 
 protected:	
 	/*This constructor should only be used by this class*/

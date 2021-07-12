@@ -28,6 +28,7 @@ import com.ibm.j9ddr.vm29.pointer.U8Pointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ShrOffsetPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.ROMClassWrapperPointer;
 import com.ibm.j9ddr.vm29.types.UDATA;
+import com.ibm.j9ddr.vm29.types.IDATA;
 
 public class ROMClassWrapperHelper {
 	public static U8Pointer RCWCLASSPATH(ROMClassWrapperPointer ptr, U8Pointer[] cacheHeader) throws CorruptDataException {
@@ -37,7 +38,7 @@ public class ROMClassWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(theCpOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					return cacheHeader[layer].add(offset);
@@ -58,7 +59,7 @@ public class ROMClassWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(romClassOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (!offset.isZero()) {
 					int layer = SharedClassesMetaDataHelper.getCacheLayerFromJ9shrOffset(j9shrOffset);
 					return cacheHeader[layer].add(offset);

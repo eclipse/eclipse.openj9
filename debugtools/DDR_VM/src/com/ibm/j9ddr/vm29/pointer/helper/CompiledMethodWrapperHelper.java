@@ -30,6 +30,7 @@ import com.ibm.j9ddr.vm29.pointer.PointerPointer;
 import com.ibm.j9ddr.vm29.structure.CompiledMethodWrapper;
 import com.ibm.j9ddr.vm29.structure.ShcItem;
 import com.ibm.j9ddr.vm29.types.UDATA;
+import com.ibm.j9ddr.vm29.types.IDATA;
 
 public class CompiledMethodWrapperHelper {
 	public static U8Pointer CMWROMMETHOD(CompiledMethodWrapperPointer ptr, U8Pointer[] cacheHeader) throws CorruptDataException {
@@ -39,7 +40,7 @@ public class CompiledMethodWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(romMethodOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (offset.isZero()) {
 					return U8Pointer.NULL;
 				}

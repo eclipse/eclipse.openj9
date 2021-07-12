@@ -6896,3 +6896,142 @@ J9NLS_SHRC_CM_PRINTSTATS_PROCESSOR_FEATURES.explanation=NOTAG
 J9NLS_SHRC_CM_PRINTSTATS_PROCESSOR_FEATURES.system_action=
 J9NLS_SHRC_CM_PRINTSTATS_PROCESSOR_FEATURES.user_response=
 # END NON-TRANSLATABLE
+
+J9NLS_SHRC_SHRINIT_HELPTEXT_RESIZE_EQUALS=Change the size of the cache to <size>.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_SHRINIT_HELPTEXT_RESIZE_EQUALS.explanation=NOTAG
+J9NLS_SHRC_SHRINIT_HELPTEXT_RESIZE_EQUALS.system_action=
+J9NLS_SHRC_SHRINIT_HELPTEXT_RESIZE_EQUALS.user_response=
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_READONLY_CACHE=Cannot resize a shared cache in readonly mode.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_READONLY_CACHE.explanation=The size of the shared cache cannot be changed if it is open in readonly mode.
+J9NLS_SHRC_CM_RESIZE_READONLY_CACHE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_READONLY_CACHE.user_response=Make sure the current user has write access to the shared cache. If readonly option is used in the command-line, remove it and retry.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_STAT=Error getting stats of the shared cache file.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_STAT.explanation=An error has occurred while getting the statistics of the shared cache file.
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_STAT.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_STAT.user_response=Previous port library error number and messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_ENTER_MUTEX=Cannot acquire the mutex of shared cache.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_ENTER_MUTEX.explanation=An error occurred while acquiring a cache mutex.
+J9NLS_SHRC_CM_RESIZE_ERROR_ENTER_MUTEX.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_ENTER_MUTEX.user_response=Verify that the system has enough native resources for the JVM to work properly. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL=The requested new cache size is within one page size of the existing cache size. The shared cache won't be resized.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL.explanation=The difference between the new cache size and the existing cache size is too small.
+J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL.user_response=There is no need to resize the cache in this case.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_SHRINK_FULL_CACHE=Cannot decrease the size of a full cache.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_SHRINK_FULL_CACHE.explanation=The shared cache is full and its size cannot be further decreased.
+J9NLS_SHRC_CM_RESIZE_ERROR_SHRINK_FULL_CACHE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_SHRINK_FULL_CACHE.user_response=There is no need to resize the cache in this case.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE=Cannot open file %s.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE.sample_input_1=/root/javasharedresources/C290M11F1A64P_myCache_G43L00.j9tmp
+J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE.explanation=An error has occurred while opening the new file.
+J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE.user_response=Previous port library error number and messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE=Cannot lock file %s.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE.sample_input_1=/root/javasharedresources/C290M11F1A64P_myCache_G43L00.j9tmp
+J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE.explanation=An error has occurred while locking the file.
+J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE.user_response=Previous port library error number and messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN=Cannot set length of file %s.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN.sample_input_1=/root/javasharedresources/C290M11F1A64P_myCache_G43L00.j9tmp
+J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN.explanation=An error has occurred while setting the file length.
+J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN.user_response=Previous port library error number and messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_OS_CACHE_HEADER=Cannot write the OS cache header.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_OS_CACHE_HEADER.explanation=An error has occurred while writing the OS cache header.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_OS_CACHE_HEADER.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_OS_CACHE_HEADER.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_OSCACHE_MMAP_ERROR_WRITE_MMAP_HEADER=Cannot write the memory mapped cache header.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_OSCACHE_MMAP_ERROR_WRITE_MMAP_HEADER.explanation=An error has occurred while writing the memory mapped cache header.
+J9NLS_SHRC_OSCACHE_MMAP_ERROR_WRITE_MMAP_HEADER.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_OSCACHE_MMAP_ERROR_WRITE_MMAP_HEADER.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_J9SHAREDCACHE_HEADER=Cannot write the J9 shared cache header.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_J9SHAREDCACHE_HEADER.explanation=An error has occurred while writing the J9 shared cache header..
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_J9SHAREDCACHE_HEADER.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_J9SHAREDCACHE_HEADER.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_DEBUG_AREA_CLASS_SEG=Cannot write the debug area and class segment area.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_DEBUG_AREA_CLASS_SEG.explanation=An error has occurred while writing the debug area and class segment area.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_DEBUG_AREA_CLASS_SEG.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_DEBUG_AREA_CLASS_SEG.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_RW_AREA=Cannot write the read write area.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_RW_AREA.explanation=An error has occurred while writing the read write area.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_RW_AREA.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_RW_AREA.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_METADATA_AREA=Cannot write the meta data area.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_METADATA_AREA.explanation=An error has occurred while writing the meta data area.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_METADATA_AREA.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_METADATA_AREA.user_response=Previous error messages may indicate the reason. If the situation persists, contact your service representative.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_DELETE=Cannot delete cache file %s.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_DELETE.explanation=An error has occurred while deleting cache file.
+J9NLS_SHRC_CM_RESIZE_ERROR_DELETE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_DELETE.user_response=Previous port library error number and messages may indicate the reason. If running on Windows, please ensure this shared cache is not in use by another JVM.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_MOVE=Cannot move file %s to %s.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_MOVE.explanation=An error has occurred while moving cache file.
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_MOVE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_ERROR_FILE_MOVE.user_response=Previous port library error number and messages may indicate the reason. If running on Windows, please ensure this shared cache is not in use by another JVM.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE=Failed to resize the shared cache \"%s\".
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE.sample_input_1=myCache
+J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE.explanation=An error has occurred while attempt to resize cache file.
+J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE.system_action=The JVM terminates without changing the size of the shared cache.
+J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE.user_response=Previous error messages has indicated the reason. Fix the error and retry.
+# END NON-TRANSLATABLE
+
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE=The shared cache \"%s\" has been resized to %d bytes.
+# START NON-TRANSLATABLE
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE.sample_input_1=myCache
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE.sample_input_2=67108864
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE.explanation=The shared cache has been successfully resized as requested.
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE.system_action=The JVM terminates.
+J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE.user_response=No action required, this is an information only message.
+# END NON-TRANSLATABLE

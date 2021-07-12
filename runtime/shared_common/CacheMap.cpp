@@ -88,6 +88,8 @@ static void checkROMClassUTF8SRPs(J9ROMClass *romClass);
 #define FIND_ATTACHED_DATA_RETRY_COUNT 1
 #define FIND_ATTACHED_DATA_CORRUPT_WAIT_TIME 1
 
+#define J9_SCC_TMP_FILE_EXT ".j9tmp"
+
 struct TR_AOTHeader;
 
 /**
@@ -975,7 +977,7 @@ SH_CacheMap::initializeROMSegmentList(J9VMThread* currentThread)
 	/* Subtract sizeof(ShcItemHdr) from end address, because when the cache is mapped
 	 * to the end of memory, and -Xscdmx0 is used, then cacheDebugAreaStart may equal NULL
 	 */
-	cacheDebugAreaStart = (U_8*)_ccHead->getClassDebugDataStartAddress() - sizeof(ShcItemHdr);
+	cacheDebugAreaStart = (U_8*)_ccHead->getCacheEndAddress() - sizeof(ShcItemHdr);
 	config = _sharedClassConfig;
 
 	if (config->configMonitor) {
@@ -1002,7 +1004,7 @@ SH_CacheMap::initializeROMSegmentList(J9VMThread* currentThread)
 	SH_CompositeCacheImpl* ccToUse = _ccHead;
 	J9SharedClassCacheDescriptor* cacheDesc = config->cacheDescriptorList;
 	do {
-		U_8* cacheDebugAreaStartCC = (U_8*)ccToUse->getClassDebugDataStartAddress() - sizeof(ShcItemHdr);
+		U_8* cacheDebugAreaStartCC = (U_8*)ccToUse->getCacheEndAddress() - sizeof(ShcItemHdr);
 		Trc_SHR_Assert_True(cacheDebugAreaStartCC == cacheDesc->metadataStartAddress);
 		cacheBase = (U_8*)ccToUse->getBaseAddress();
 
@@ -2061,9 +2063,9 @@ SH_CacheMap::commitROMClass(J9VMThread* currentThread, ShcItem* itemInCache, SH_
 
 	srcwInCache = (ScopedROMClassWrapper*) ITEMDATA(itemInCache); /* must be after name is written */
 
-	getJ9ShrOffsetFromAddress(cpw, &srcw.theCpOffset);
+	getJ9ShrOffsetFromAddress(cpw, false, &srcw.theCpOffset);
 	/* Calculate the J9ShrOffset */
-	getJ9ShrOffsetFromAddress(romClassBuffer, &srcw.romClassOffset);
+	getJ9ShrOffsetFromAddress(romClassBuffer, true, &srcw.romClassOffset);
 	if (useScope) {
 		const J9UTF8* mcToUse = modContextInCache;
 		const J9UTF8* ptToUse = partitionInCache;
@@ -2074,13 +2076,13 @@ SH_CacheMap::commitROMClass(J9VMThread* currentThread, ShcItem* itemInCache, SH_
 #endif /* defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE) */
 			srcw.modContextOffset.offset = 0;
 		} else {
-			getJ9ShrOffsetFromAddress(mcToUse, &srcw.modContextOffset);
+			getJ9ShrOffsetFromAddress(mcToUse, false, &srcw.modContextOffset);
 		}
 		if (NULL == partitionInCache) {
 			J9ShrOffset offset = {0};
 			srcw.partitionOffset = offset;
 		} else {
-			getJ9ShrOffsetFromAddress(ptToUse, &srcw.partitionOffset);
+			getJ9ShrOffsetFromAddress(ptToUse, false, &srcw.partitionOffset);
 		}
 	}
 	memcpy(srcwInCache, &srcw, wrapperSize);
@@ -2168,7 +2170,7 @@ SH_CacheMap::commitOrphanROMClass(J9VMThread* currentThread, ShcItem* itemInCach
 	this->commitClassDebugData(currentThread, J9UTF8_LENGTH(romClassName), (const char*)J9UTF8_DATA(romClassName));
 
 	owInCache = (OrphanWrapper*) ITEMDATA(itemInCache);
-	getJ9ShrOffsetFromAddress(romClassBuffer, &ow.romClassOffset);
+	getJ9ShrOffsetFromAddress(romClassBuffer, true, &ow.romClassOffset);
 	memcpy(owInCache, &ow, sizeof(OrphanWrapper));
 
 	if ((true == useWriteHash) && (*_runtimeFlags & J9SHR_RUNTIMEFLAG_ENABLE_REDUCE_STORE_CONTENTION)) {
@@ -2824,7 +2826,7 @@ SH_CacheMap::addROMClassResourceToCache(J9VMThread* currentThread, const void* r
 	}
 	
 	J9ShrOffset offset;
-	getJ9ShrOffsetFromAddress(romAddress, &offset);
+	getJ9ShrOffsetFromAddress(romAddress, true, &offset);
 
 	resourceDescriptor->writeDataToCache(itemInCache, &offset);
 
@@ -3753,6 +3755,7 @@ SH_CacheMap::addByteDataToCache(J9VMThread* currentThread, SH_Manager* localBDM,
 				return NULL;
 			}
 		} else {
+			/* J9SHR_DATA_TYPE_CACHELET is not supported anymore, this block can be removed. */
 			_ccHead->initBlockData(&itemPtr, wrapperLength, TYPE_CACHELET);
 			cacheForAllocate->allocateWithSegment(currentThread, itemPtr, (U_32)data->length, &externalBlock);
 			if (externalBlock == NULL) {
@@ -3785,9 +3788,14 @@ SH_CacheMap::addByteDataToCache(J9VMThread* currentThread, SH_Manager* localBDM,
 		}
 		bdwInCache = (ByteDataWrapper*)ITEMDATA(itemInCache);
 		bdwInCache->dataLength = (U_32)data->length;
-		getJ9ShrOffsetFromAddress(tokenKeyToUse, &bdwInCache->tokenOffset);
+		getJ9ShrOffsetFromAddress(tokenKeyToUse, false, &bdwInCache->tokenOffset);
 		if (externalBlock) {
-			getJ9ShrOffsetFromAddress(externalBlock, &bdwInCache->externalBlockOffset);
+			/**
+			 * externalBlock is either from J9SHRDATA_USE_READWRITE or J9SHR_DATA_TYPE_CACHELET.
+			 * Currently no code is storing byte data using J9SHRDATA_USE_READWRITE. J9SHR_DATA_TYPE_CACHELET is not supported anymore. 
+			 * This block can be removed.
+			 */
+			getJ9ShrOffsetFromAddress(externalBlock, true, &bdwInCache->externalBlockOffset);
 		} else {
 #if defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE)
 			bdwInCache->externalBlockOffset.cacheLayer = 0;
@@ -4341,7 +4349,7 @@ SH_CacheMap::getJavacoreData(J9JavaVM *vm, J9SharedClassJavacoreDataDescriptor* 
 	} else {
 		if (descriptor->cacheSize > descriptor->freeBytes) {
     		descriptor->percFull = ((descriptor->cacheSize - descriptor->freeBytes) / (descriptor->cacheSize/100));
-    	}
+		}
 	}
 
 	/* turn on assertion on local mutex again. reference CMVC 145844 */
@@ -5428,7 +5436,7 @@ SH_CacheMap::exitStringTableMutex(J9VMThread* currentThread, UDATA resetReason)
 	
 	Trc_SHR_CM_exitStringTableMutex_entry(currentThread);
 	
-	if ((table != NULL) && !_ccHead->isReadWriteAreaHeaderReadOnly()) {
+	if ((table != NULL) && !_ccHead->isReadWriteAreaReadOnly()) {
 		SRP_PTR_SET(table->sharedHeadNodePtr, table->headNode);
 		SRP_PTR_SET(table->sharedTailNodePtr, table->tailNode);
 	}
@@ -5622,7 +5630,7 @@ SH_CacheMap::appendCacheDescriptorList(J9VMThread* currentThread, J9SharedClassC
 	J9SharedClassCacheDescriptor* cacheDescriptorTail = sharedClassConfig->cacheDescriptorList->previous;
 	cacheDesc->cacheStartAddress = ccToUse->getCacheHeaderAddress();
 	cacheDesc->romclassStartAddress = ccToUse->getFirstROMClassAddress();
-	cacheDesc->metadataStartAddress = (U_8*)ccToUse->getClassDebugDataStartAddress() - sizeof(ShcItemHdr);
+	cacheDesc->metadataStartAddress = (U_8*)ccToUse->getCacheEndAddress() - sizeof(ShcItemHdr);
 	cacheDesc->cacheSizeBytes = ccToUse->getCacheMemorySize();
 
 	cacheDescriptorTail->next = cacheDesc;
@@ -6967,7 +6975,7 @@ SH_CacheMap::setCacheAddressRangeArray(void)
 	SH_CompositeCacheImpl* ccToUse = _ccTail;
 	do {
 		Trc_SHR_Assert_True(_numOfCacheLayers <= J9SH_LAYER_NUM_MAX_VALUE);
-		_cacheAddressRangeArray[_numOfCacheLayers].cacheHeader = (void*)ccToUse->getCacheHeaderAddress();
+		_cacheAddressRangeArray[_numOfCacheLayers].cacheBase = (void*)ccToUse->getBaseAddress();
 		_cacheAddressRangeArray[_numOfCacheLayers].cacheEnd = (void*)ccToUse->getCacheEndAddress();
 		ccToUse = ccToUse->getPrevious();
 		_numOfCacheLayers += 1;
@@ -6979,24 +6987,29 @@ SH_CacheMap::setCacheAddressRangeArray(void)
  *	Helper method to turn an address into J9ShrOffset using _cacheAddressRangeArray
  *
  *	@param [in] address An address in the shared cache.
+ *	@param [in] offsetFromBaseAddress Whether it is offset from cache base address (CASEGSTART)
  *	@param [out] offset The corresponding J9ShrOffset from the address.
  */
 void
-SH_CacheMap::getJ9ShrOffsetFromAddress(const void* address, J9ShrOffset* offset)
+SH_CacheMap::getJ9ShrOffsetFromAddress(const void* address, bool offsetFromBaseAddress, J9ShrOffset* offset)
 {
 	if (UnitTest::OSCACHE_TEST == UnitTest::unitTest || UnitTest::SHAREDCACHE_API_TEST == UnitTest::unitTest) {
-		if (NULL == _cacheAddressRangeArray[0].cacheHeader) {
+		if (NULL == _cacheAddressRangeArray[0].cacheBase) {
 			setCacheAddressRangeArray();
 		}
 	}
 	for (U_32 layer = 0; layer <= _numOfCacheLayers; layer++) {
-		if ((_cacheAddressRangeArray[layer].cacheHeader < address)
-			&& (address < _cacheAddressRangeArray[layer].cacheEnd)
+		if ((_cacheAddressRangeArray[layer].cacheBase <= address)
+			&& (address <= _cacheAddressRangeArray[layer].cacheEnd)
 		) {
 #if defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE)
 			offset->cacheLayer = layer;
 #endif /* defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE) */
-			offset->offset = (U_32)((U_8*)address - (U_8*)_cacheAddressRangeArray[layer].cacheHeader);
+			if (offsetFromBaseAddress) {
+				offset->offset = (U_32)((U_8*)address - (U_8*)_cacheAddressRangeArray[layer].cacheBase);
+			} else {
+				offset->offset = (U_32)((U_8*)address - (U_8*)_cacheAddressRangeArray[layer].cacheEnd);
+			}
 			return;
 		}
 	}
@@ -7015,15 +7028,21 @@ void*
 SH_CacheMap::getAddressFromJ9ShrOffset(const J9ShrOffset* offset)
 {
 	if (UnitTest::OSCACHE_TEST == UnitTest::unitTest) {
-		if (NULL == _cacheAddressRangeArray[0].cacheHeader) {
+		if (NULL == _cacheAddressRangeArray[0].cacheBase) {
 			setCacheAddressRangeArray();
 		}
 	}
+	U_8* address = NULL;
+	U_32 layer = 0;
 #if defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE)
-	return (U_8*)_cacheAddressRangeArray[offset->cacheLayer].cacheHeader + offset->offset;
-#else	/* defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE) */
-	return (U_8*)_cacheAddressRangeArray[0].cacheHeader + offset->offset;
+	layer = offset->cacheLayer;
 #endif /* defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE) */
+	if (offset->offset >= 0) {
+		address = (U_8*)_cacheAddressRangeArray[layer].cacheBase + offset->offset;
+	} else {
+		address = (U_8*)_cacheAddressRangeArray[layer].cacheEnd + offset->offset;
+	}
+	return address;
 }
 
 /**
@@ -7047,4 +7066,252 @@ SH_CacheMap::getDataFromByteDataWrapper(const ByteDataWrapper* bdw)
 		ret = (U_8*)getAddressFromJ9ShrOffset(&(bdw->externalBlockOffset));
 	}
 	return ret;
+}
+
+bool
+SH_CacheMap::resizeCache(J9VMThread* currentThread, U_32 newSize)
+{
+	bool rc = false;
+	bool tmpFileCreated = false;
+	bool tmpFileClosed = false;
+	PORT_ACCESS_FROM_VMC(currentThread);
+	char cacheTempFileName[J9SH_MAXPATH + sizeof(J9_SCC_TMP_FILE_EXT) - 1];
+	const char* cacheFileName = _ccHead->getCacheFullPathName();
+	I_32 mode = J9SH_CACHE_FILE_MODE_DEFAULTDIR_WITHOUT_GROUPACCESS;
+	IDATA lockRc1 = -1;
+	IDATA lockRc2 = -1;
+	I_32 lockRc3 = -1;
+	IDATA fd = 0;
+	J9FileStat statBuf = {0};
+	UDATA readWriteBytes = 0;
+	I_32 existingCacheFileSize = 0;
+	I_32 dbgRegionSize = 0;
+	I_32 existingFreeSpace = 0;
+	I_32 existingFreeDbgSpace = 0;
+	I_32 totalSizeToChange = 0;
+	I_32 freeSpaceToChange = 0; 
+	I_32 freeDebugSpaceToChange = 0; 
+	I_32 align = (0 != _ccHead->getOSPageSize()) ? (I_32)_ccHead->getOSPageSize() : 0x1000;
+	
+	if (_ccHead->isRunningReadOnly()) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_READONLY_CACHE);
+		goto done;
+	}
+
+	if (0 == j9file_stat(cacheFileName, 0, &statBuf)) {
+		if (1 == statBuf.perm.isGroupReadable) {
+			mode += 40;
+		}
+		if (1 == statBuf.perm.isGroupWriteable) {
+			mode += 20;
+		}
+	} else {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_FILE_STAT);
+		goto done;
+	}
+	if (newSize > MAX_CC_SIZE) {
+		newSize = MAX_CC_SIZE;
+	} else if (MIN_CC_SIZE > newSize) {
+		newSize = MIN_CC_SIZE;
+	}
+
+	lockRc1 = _ccHead->enterWriteMutex(currentThread, false, "SH_CacheMap::resizeCache");
+
+	readWriteBytes = _ccHead->getReadWriteBytes();
+	if (readWriteBytes > 0) {
+		/* readWriteBytes can be 0, in such case, do not need to call enterReadWriteAreaMutex() */
+		UDATA ignore;
+		bool readonly = true;
+		/* 
+		 * Pass readonly = true to enterReadWriteAreaMutex().
+		 * This is because
+		 * 1. We won't write anything into the RW area.
+		 * 2. If we pass in readonly = false, _theca->readWriteCrashCntr will be inremented
+		 * by 1. It is decremented when the RW mutex is release. However, it is possible that this JVM
+		 * could crash holding the RW mutex (before releasing it). This will leave an incorrect
+		 * readWriteCrashCntr value in the cache header, making other JVMs treat the shared StringTable as corrupted,
+		 * which is not true.
+		 */ 
+		lockRc2 = _ccHead->enterReadWriteAreaMutex(currentThread, readonly, &ignore, &ignore);
+	}
+
+	if ((lockRc1 < 0)
+		|| ((lockRc2 < 0) && (readWriteBytes > 0))
+	) {
+		Trc_SHR_CM_resizeCache_Error_Enter_Mutex(currentThread, lockRc1, lockRc2, readWriteBytes);
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_ENTER_MUTEX);
+		goto done;
+	} 
+	updateRuntimeFullFlags(currentThread);
+	/* get the sizes inside locks */
+	existingCacheFileSize = (I_32)_ccHead->getTotalSize();
+	dbgRegionSize = (I_32)_ccHead->getDebugBytes();
+	totalSizeToChange = newSize - existingCacheFileSize;
+	
+	if (abs(totalSizeToChange) <= align) {
+		/* ignore the resize request */
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL);
+		goto done;
+	}
+
+	freeDebugSpaceToChange = (I_32)((I_64)totalSizeToChange * (I_64)dbgRegionSize/existingCacheFileSize);
+	freeSpaceToChange = totalSizeToChange - freeDebugSpaceToChange;
+	if (totalSizeToChange < 0) {
+		if (J9_ARE_ALL_BITS_SET(*_runtimeFlags, J9SHR_RUNTIMEFLAG_BLOCK_SPACE_FULL)) {
+			/* cache is already full, no point to shrink */
+			CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_SHRINK_FULL_CACHE);
+			goto done;
+		}
+		existingFreeSpace = (I_32)_ccHead->getFreeBytes();
+		if (existingFreeSpace + freeSpaceToChange < CC_MIN_SPACE_BEFORE_CACHE_FULL) {
+			Trc_SHR_Assert_True(existingFreeSpace >= CC_MIN_SPACE_BEFORE_CACHE_FULL);
+			freeSpaceToChange = CC_MIN_SPACE_BEFORE_CACHE_FULL - existingFreeSpace;
+		}
+		existingFreeDbgSpace = (I_32)_ccHead->getFreeDebugSpaceBytes();
+		if (existingFreeDbgSpace + freeDebugSpaceToChange < 0) {
+			freeDebugSpaceToChange = -existingFreeDbgSpace;
+		}
+		align = -align;
+	} else {
+		existingFreeSpace = (I_32)_ccHead->getFreeBytes();
+		if (existingFreeSpace + freeSpaceToChange < CC_MIN_SPACE_BEFORE_CACHE_FULL) {
+			Trc_SHR_Assert_True(J9_ARE_ALL_BITS_SET(*_runtimeFlags, J9SHR_RUNTIMEFLAG_BLOCK_SPACE_FULL));
+			/* freeSpaceToChange is going to be round down to align. We are increasing the cache size here.
+			 * Make sure existingFreeSpace + freeSpaceToChange is always >= CC_MIN_SPACE_BEFORE_CACHE_FULL
+			 * There is an assertion on this a few lines down. 
+			 */
+			freeSpaceToChange = CC_MIN_SPACE_BEFORE_CACHE_FULL - existingFreeSpace + align;
+		}
+	}
+	if ((0 != freeSpaceToChange) && (0 != freeDebugSpaceToChange)) {
+		/* freeSpaceToChange and freeDebugSpaceToChange must have the same sign, both positive or both negative.
+		 * No need to worry about the signs if one of them is 0. 
+		 */
+		Trc_SHR_Assert_True((freeSpaceToChange > 0) == (freeDebugSpaceToChange > 0));
+	}
+	freeSpaceToChange = ROUND_DOWN_TO(align, freeSpaceToChange);
+	freeDebugSpaceToChange = ROUND_DOWN_TO(align, freeDebugSpaceToChange);
+	if ((0 == freeSpaceToChange) 
+		&& (0 == freeDebugSpaceToChange)
+	) {
+		/* Nothing to resize. Ignore the resize request */
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_SIZE_TO_CHANGE_TOO_SMALL);
+		goto done;
+	}
+
+	newSize = existingCacheFileSize + freeSpaceToChange + freeDebugSpaceToChange;
+	Trc_SHR_Assert_True((existingFreeSpace + freeSpaceToChange >= CC_MIN_SPACE_BEFORE_CACHE_FULL));
+	j9str_printf(PORTLIB, cacheTempFileName, J9SH_MAXPATH + sizeof(J9_SCC_TMP_FILE_EXT) - 1, "%s%s", cacheFileName, J9_SCC_TMP_FILE_EXT);
+
+#if defined(WIN32) || defined(WIN64)
+	/* EsOpenShareDelete on Windows allows files to be deleted/renamed while they are still open, which is in line with unix semantics. */
+	fd = j9file_open(cacheTempFileName, EsOpenCreate | EsOpenWrite | EsOpenShareDelete, mode);
+#else /* defined(WIN32) || defined(WIN64) */
+	fd = j9file_open(cacheTempFileName, EsOpenCreate | EsOpenWrite, mode);
+#endif /* defined(WIN32) || defined(WIN64) */
+
+	if (-1 == fd) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_OPEN_FILE, cacheTempFileName);
+		goto done;
+	}
+	tmpFileCreated = true;
+	tmpFileClosed = false;
+	lockRc3 = j9file_lock_bytes(fd, J9PORT_FILE_WRITE_LOCK | J9PORT_FILE_WAIT_FOR_LOCK, 0, newSize);
+	if (lockRc3 < 0) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+		
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_LOCK_FILE, cacheTempFileName);
+		goto done;
+	}
+
+	if (0 != j9file_set_length(fd, newSize)) {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_SET_FILE_LEN, cacheTempFileName);
+		goto done;
+	}
+
+	if (!_ccHead->fixAndWriteOSCacheHeader(currentThread, fd, freeSpaceToChange + freeDebugSpaceToChange)) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_OS_CACHE_HEADER);
+		goto done;
+	}
+	if (!_ccHead->fixAndWriteJ9SharedCacheHeader(currentThread, fd, freeDebugSpaceToChange, freeSpaceToChange)) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_J9SHAREDCACHE_HEADER);
+		goto done;
+	}
+	if (!_ccHead->fixAndWriteDebugAreaAndClassSegment(currentThread, fd, freeDebugSpaceToChange)) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_DEBUG_AREA_CLASS_SEG);
+		goto done;
+	}
+	if (!_ccHead->writeReadWriteArea(currentThread, fd)) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_RW_AREA);
+		goto done;
+	}
+	if (!_ccHead->writeMetaDataArea(currentThread, fd)) {
+		CACHEMAP_PRINT(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_WRITE_METADATA_AREA);
+		goto done;
+	}
+
+	if (0 == lockRc2) {
+		_ccHead->exitReadWriteAreaMutex(currentThread, J9SHR_STRING_POOL_OK);
+		lockRc2 = -1;
+	}
+	_ccHead->exitWriteMutex(currentThread, "SH_CacheMap::resizeCache");
+	lockRc1 = -1;
+	j9file_close(fd);
+	tmpFileClosed = true;
+	/* show NLS message JVMSHRC806I about cache being deleted only when sub-option "verbose" is used. */
+	if (0 != _ccHead->deleteCache(currentThread, J9_ARE_NO_BITS_SET(_verboseFlags, J9SHR_VERBOSEFLAG_ENABLE_VERBOSE))) {
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_DELETE, cacheFileName);
+		goto done;
+	}
+	if (0 == j9file_move(cacheTempFileName, cacheFileName)) {
+		rc = true;
+	} else {
+		I_32 errorno = j9error_last_error_number();
+		const char * errormsg = j9error_last_error_message();
+
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_NUMBER, errorno);
+		Trc_SHR_Assert_True(errormsg != NULL);
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_PORT_ERROR_MESSAGE, errormsg);
+		CACHEMAP_PRINT2(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_ERROR_FILE_MOVE, cacheTempFileName, cacheFileName);
+	}
+done:
+	if (!rc) {
+		if (tmpFileCreated) {
+			j9file_unlink(cacheTempFileName);
+			if (!tmpFileClosed) {
+				j9file_close(fd);
+			}
+		}
+		if (0 == lockRc2) {
+			_ccHead->exitReadWriteAreaMutex(currentThread, J9SHR_STRING_POOL_OK);
+		}
+		if (0 == lockRc1) {
+			_ccHead->exitWriteMutex(currentThread, "SH_CacheMap::resizeCache");
+		}
+		CACHEMAP_PRINT1(J9NLS_ERROR, J9NLS_SHRC_CM_RESIZE_FAILED_TO_RESIZE, _cacheName);
+	} else {
+		CACHEMAP_PRINT2(J9NLS_INFO, J9NLS_SHRC_CM_RESIZE_SUCCEED_TO_RESIZE, _cacheName, newSize);
+	}
+	return rc;
 }

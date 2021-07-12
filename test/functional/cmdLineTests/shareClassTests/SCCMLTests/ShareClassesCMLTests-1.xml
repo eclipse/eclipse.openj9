@@ -657,7 +657,8 @@
 	
 	<test id="Test 43: LIR 1445.1 : Debug Area PrintStats Test : Ensure debug area is 3 MB in size and contains data" timeout="600" runPath=".">
 		<command>$JAVA_EXE$ $currentMode$,printStats -version</command>
-		<output type="success" caseSensitive="yes" regex="yes" javaUtilPattern="yes" showMatch="yes">Class debug area size[\s]*= 3145728</output>
+		<!-- Class debug area ends at a page boundary, so its size is slightly less than 3M (3M - size of J9SharedCacheHeader). The value can vary on different platforms -->
+		<output type="success" caseSensitive="yes" regex="yes" javaUtilPattern="yes" showMatch="yes">Class debug area size[\s]*= 314[\d][\d][\d][\d][\D]</output>
 
 		<output type="failure" caseSensitive="yes" regex="yes" javaUtilPattern="yes" showMatch="yes">Class debug area size[\s]*= 0</output>
 		<output type="failure" caseSensitive="yes" regex="yes" javaUtilPattern="yes" showMatch="yes">Class debug area used bytes[\s]*= 0</output>
@@ -687,7 +688,8 @@
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">ReadWrite bytes[\s]*= [\d]*</output>
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">JCL data bytes[\s]*= [\d]*</output>
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Byte data bytes[\s]*= [\d]*</output>
-		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Class debug area size[\s]*= 3145728</output>
+		<!-- Class debug area ends at a page boundary, so its size is slightly less than 3M (3M - size of J9SharedCacheHeader) -->
+		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Class debug area size[\s]*= 314[\d][\d][\d][\d][\D]</output>
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Class debug area % used[\s]*= [\d]*</output>
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Class LineNumberTable bytes[\s]*= [\d]*</output>
 		<output type="required" caseSensitive="yes" regex="yes" javaUtilPattern="yes">Class LocalVariableTable bytes[\s]*= [\d]*</output>

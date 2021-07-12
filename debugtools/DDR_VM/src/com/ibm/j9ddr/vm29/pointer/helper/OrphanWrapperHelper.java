@@ -29,6 +29,7 @@ import com.ibm.j9ddr.vm29.pointer.generated.J9ROMClassPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.J9ShrOffsetPointer;
 import com.ibm.j9ddr.vm29.pointer.generated.OrphanWrapperPointer;
 import com.ibm.j9ddr.vm29.types.UDATA;
+import com.ibm.j9ddr.vm29.types.IDATA;
 
 public class OrphanWrapperHelper {
 	public static J9ROMClassPointer romClass(OrphanWrapperPointer ptr, U8Pointer[] cacheHeader) throws CorruptDataException {
@@ -38,7 +39,7 @@ public class OrphanWrapperHelper {
 		} else {
 			try {
 				J9ShrOffsetPointer j9shrOffset = J9ShrOffsetPointer.cast(romClassOffset);
-				UDATA offset = j9shrOffset.offset();
+				IDATA offset = j9shrOffset.offset();
 				if (offset.isZero()) {
 					return J9ROMClassPointer.NULL;
 				}

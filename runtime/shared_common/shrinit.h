@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -61,7 +61,8 @@ void j9shr_populatePreinitConfigDefaults(J9JavaVM *vm, J9SharedClassPreinitConfi
 BOOLEAN j9shr_isPlatformDefaultPersistent(struct J9JavaVM* vm);
 UDATA j9shr_isBCIEnabled(J9JavaVM *vm);
 UDATA ensureCorrectCacheSizes(J9JavaVM *vm, J9PortLibrary* portlib, U_64 runtimeFlags, UDATA verboseFlags, J9SharedClassPreinitConfig* piconfig);
-UDATA parseArgs(J9JavaVM* vm, char* options, U_64* runtimeFlags, UDATA* verboseFlags, char** cacheName, char** modContext, char** expireTime, char** ctrlDirName, char** cacheDirPerm, char** methodSpecs, UDATA* printStatsOptions, UDATA* storageKeyTesting);
+UDATA parseArgs(J9JavaVM* vm, char* options, U_64* runtimeFlags, UDATA* verboseFlags, char** cacheName, char** modContext, char** expireTime, char** ctrlDirName, 
+		char** cacheDirPerm, char** methodSpecs, UDATA* printStatsOptions, UDATA* storageKeyTesting);
 UDATA convertPermToDecimal(J9JavaVM *vm, const char *permStr);
 SCAbstractAPI * initializeSharedAPI(J9JavaVM *vm);
 U_64 getDefaultRuntimeFlags(void);
@@ -194,6 +195,7 @@ typedef struct J9SharedClassesOptions {
 #define OPTION_LAYER_EQUALS "layer="
 #define OPTION_CREATE_LAYER "createLayer"
 #define OPTION_NO_PERSISTENT_DISK_SPACE_CHECK "noPersistentDiskSpaceCheck"
+#define OPTION_RESIZE_EQUALS "resize="
 
 /* public options for printallstats= and printstats=  */
 #define SUB_OPTION_PRINTSTATS_ALL "all"
@@ -274,6 +276,7 @@ typedef struct J9SharedClassesOptions {
 #define RESULT_DO_CREATE_LAYER 52
 #define RESULT_DO_PRINT_TOP_LAYER_STATS 53
 #define RESULT_DO_PRINT_TOP_LAYER_STATS_EQUALS 54
+#define RESULT_DO_RESIZE_CACHE_EQUALS 55
 
 #define PARSE_TYPE_EXACT 1
 #define PARSE_TYPE_STARTSWITH 2
@@ -300,6 +303,7 @@ typedef struct J9SharedClassesOptions {
 #define HELPTEXT_INVALIDATE_AOT_METHODS_OPTION OPTION_INVALIDATE_AOT_METHODS_EQUALS"help|{<method_specification>[,<method_specification>]}"
 #define HELPTEXT_REVALIDATE_AOT_METHODS_OPTION OPTION_REVALIDATE_AOT_METHODS_EQUALS"help|{<method_specification>[,<method_specification>]}"
 #define HELPTEXT_FIND_AOT_METHODS_OPTION OPTION_FIND_AOT_METHODS_EQUALS"help|{<method_specification>[,<method_specification>]}"
+#define HELPTEXT_RESIZE_EQUALS OPTION_RESIZE_EQUALS"<size>"
 #define HELPTEXT_ADJUST_SOFTMX_EQUALS OPTION_ADJUST_SOFTMX_EQUALS"<size>"
 #define HELPTEXT_ADJUST_MINAOT_EQUALS OPTION_ADJUST_MINAOT_EQUALS"<size>"
 #define HELPTEXT_ADJUST_MAXAOT_EQUALS OPTION_ADJUST_MAXAOT_EQUALS"<size>"

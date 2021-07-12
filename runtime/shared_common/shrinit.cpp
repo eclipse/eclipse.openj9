@@ -244,6 +244,9 @@ J9SharedClassesHelpText J9SHAREDCLASSESHELPTEXT[] = {
 	{HELPTEXT_REVALIDATE_AOT_METHODS_OPTION, J9NLS_SHRC_SHRINIT_HELPTEXT_REVALIDATE_AOT_METHODS, 0, 0},
 	{HELPTEXT_FIND_AOT_METHODS_OPTION, J9NLS_SHRC_SHRINIT_HELPTEXT_FIND_AOT_METHODS, 0, 0},
 	HELPTEXT_NEWLINE,
+#if !defined(J9ZOS390)
+	{HELPTEXT_RESIZE_EQUALS, 0, 0, J9NLS_SHRC_SHRINIT_HELPTEXT_RESIZE_EQUALS},
+#endif /* !defined(J9ZOS390) */
 	{HELPTEXT_ADJUST_SOFTMX_EQUALS, J9NLS_SHRC_SHRINIT_HELPTEXT_ADJUST_SOFTMX_EQUALS, 0, 0},
 	{HELPTEXT_ADJUST_MINAOT_EQUALS, J9NLS_SHRC_SHRINIT_HELPTEXT_ADJUST_MINAOT_EQUALS, 0, 0},
 	{HELPTEXT_ADJUST_MAXAOT_EQUALS, J9NLS_SHRC_SHRINIT_HELPTEXT_ADJUST_MAXAOT_EQUALS, 0, 0},
@@ -376,6 +379,7 @@ J9SharedClassesOptions J9SHAREDCLASSESOPTIONS[] = {
 	{ OPTION_CREATE_LAYER, PARSE_TYPE_EXACT, RESULT_DO_CREATE_LAYER, 0 },
 #endif /* defined(J9VM_OPT_MULTI_LAYER_SHARED_CLASS_CACHE) */
 	{ OPTION_NO_PERSISTENT_DISK_SPACE_CHECK, PARSE_TYPE_EXACT, RESULT_DO_ADD_RUNTIMEFLAG, J9SHR_RUNTIMEFLAG_NO_PERSISTENT_DISK_SPACE_CHECK},
+	{ OPTION_RESIZE_EQUALS, PARSE_TYPE_STARTSWITH, RESULT_DO_RESIZE_CACHE_EQUALS, 0},
 	{ NULL, 0, 0 }
 };
 
@@ -403,6 +407,7 @@ static bool isFreeDiskSpaceLow(J9JavaVM *vm, U_64* maxsize, U_64 runtimeFlags);
 static char* generateStartupHintsKey(J9JavaVM *vm);
 static void fetchStartupHintsFromSharedCache(J9VMThread* vmThread);
 static void findExistingCacheLayerNumbers(J9JavaVM* vm, const char* ctrlDirName, const char* cacheName, U_64 runtimeFlags, I_8 *maxLayerNo);
+static void j9shr_resizeCache(J9VMThread* currentThread);
 
 typedef struct J9SharedVerifyStringTable {
 	void *romClassAreaStart;
@@ -697,6 +702,7 @@ parseArgs(J9JavaVM* vm, char* options, U_64* runtimeFlags, UDATA* verboseFlags, 
 		case RESULT_DO_ADJUST_MAXAOT_EQUALS:
 		case RESULT_DO_ADJUST_MINJITDATA_EQUALS:
 		case RESULT_DO_ADJUST_MAXJITDATA_EQUALS:
+		case RESULT_DO_RESIZE_CACHE_EQUALS:
 		{
 			UDATA tmpareasize = (UDATA)-1;
 			char * areasize = options + strlen(J9SHAREDCLASSESOPTIONS[i].option);
@@ -718,8 +724,10 @@ parseArgs(J9JavaVM* vm, char* options, U_64* runtimeFlags, UDATA* verboseFlags, 
 				vm->sharedCacheAPI->maxAOT = (I_32)tmpareasize;
 			} else if (RESULT_DO_ADJUST_MINJITDATA_EQUALS == J9SHAREDCLASSESOPTIONS[i].action) {
 				vm->sharedCacheAPI->minJIT = (I_32)tmpareasize;
-			} else {
+			} else if (RESULT_DO_ADJUST_MAXJITDATA_EQUALS == J9SHAREDCLASSESOPTIONS[i].action) {
 				vm->sharedCacheAPI->maxJIT = (I_32)tmpareasize;
+			} else {
+				vm->sharedCacheAPI->newCacheSize = (U_32)tmpareasize;
 			}
 			options += strlen(J9SHAREDCLASSESOPTIONS[i].option) + strlen(areasize) + 1;
 			returnAction = J9SHAREDCLASSESOPTIONS[i].action;
@@ -2441,7 +2449,8 @@ getCacheTypeFromRuntimeFlags(U_64 runtimeFlags)
 
 
 static IDATA
-performSharedClassesCommandLineAction(J9JavaVM* vm, J9SharedClassConfig* sharedClassConfig, const char* cacheName, UDATA verboseFlags, U_64 runtimeFlags, char* expireTimeStr, UDATA command, UDATA printStatsOptions) {
+performSharedClassesCommandLineAction(J9JavaVM* vm, J9SharedClassConfig* sharedClassConfig, const char* cacheName, UDATA verboseFlags, U_64 runtimeFlags, char* expireTimeStr, 
+		UDATA command, UDATA printStatsOptions) {
 	PORT_ACCESS_FROM_JAVAVM(vm);
 	J9PortShcVersion versionData;
 	U_32 cacheType = getCacheTypeFromRuntimeFlags(runtimeFlags);
@@ -2608,6 +2617,7 @@ performSharedClassesCommandLineAction(J9JavaVM* vm, J9SharedClassConfig* sharedC
 	case RESULT_DO_ADJUST_MAXAOT_EQUALS:
 	case RESULT_DO_ADJUST_MINJITDATA_EQUALS:
 	case RESULT_DO_ADJUST_MAXJITDATA_EQUALS:
+	case RESULT_DO_RESIZE_CACHE_EQUALS:
 		if (1 == checkIfCacheExists(vm, sharedClassConfig->ctrlDirName, cacheDirName, cacheName, &versionData, cacheType, layer)) {
 			return J9VMDLLMAIN_OK;
 		}
@@ -3742,7 +3752,13 @@ j9shr_init(J9JavaVM *vm, UDATA loadFlags, UDATA* nonfatal)
 		cm->tryAdjustMinMaxSizes(currentThread);
 		returnVal = J9VMDLLMAIN_SILENT_EXIT_VM;
 	}
-
+	
+	if (RESULT_DO_RESIZE_CACHE_EQUALS == parseResult) {
+		if (J9PORT_SHR_CACHE_TYPE_PERSISTENT == getCacheTypeFromRuntimeFlags(runtimeFlags)) {
+			j9shr_resizeCache(currentThread);
+		}
+		returnVal = J9VMDLLMAIN_SILENT_EXIT_VM;
+	}
 	return returnVal;
 
 _error:
@@ -4523,7 +4539,7 @@ j9shr_createCacheSnapshot(J9JavaVM* vm, const char* cacheName)
 			SH_CacheMap* cm = (SH_CacheMap *)vm->sharedClassConfig->sharedClassCache;
 			SH_CompositeCacheImpl *cc = (SH_CompositeCacheImpl *)cm->getCompositeCacheAPI();
 			J9SharedCacheHeader* theca = cc->getCacheHeaderAddress();
-			UDATA cacheSize = cc->getCacheMemorySize();
+			UDATA cacheSize = cc->getTotalSize();
 			UDATA headerSize = SH_OSCachesysv::getHeaderSize();
 			OSCachesysv_header_version_current* headerStart = (OSCachesysv_header_version_current*)((UDATA)theca - headerSize);
 			UDATA ignore = 0;
@@ -4552,7 +4568,7 @@ j9shr_createCacheSnapshot(J9JavaVM* vm, const char* cacheName)
 				}
 			}
 
-			lockRc1 = j9file_lock_bytes(fd, J9PORT_FILE_WRITE_LOCK | J9PORT_FILE_WAIT_FOR_LOCK, 0, cacheSize + headerSize);
+			lockRc1 = j9file_lock_bytes(fd, J9PORT_FILE_WRITE_LOCK | J9PORT_FILE_WAIT_FOR_LOCK, 0, cacheSize);
 
 			if (lockRc1 < 0) {
 				I_32 errorno = j9error_last_error_number();
@@ -4580,7 +4596,7 @@ j9shr_createCacheSnapshot(J9JavaVM* vm, const char* cacheName)
 				SHRINIT_ERR_TRACE1(verboseFlags, J9NLS_SHRC_SHRINIT_ERROR_ENTER_MUTEX, cacheName);
 				rc = -1;
 			} else {
-				UDATA nbytes = cacheSize + headerSize;
+				UDATA nbytes = cacheSize;
 				U_32 theCacheInitComplete = 0;
 				IDATA cacheInitCompleteOffset = SH_OSCachesysv::getSysvHeaderFieldOffsetForGen(OSCACHE_CURRENT_CACHE_GEN, OSCACHE_HEADER_FIELD_CACHE_INIT_COMPLETE);
 				IDATA fileRc = 0;
@@ -5313,6 +5329,18 @@ findExistingCacheLayerNumbers(J9JavaVM* vm, const char* ctrlDirName, const char*
 		*maxLayerNo = maxLayer;
 	}
 	return;
+}
+
+static void 
+j9shr_resizeCache(J9VMThread* currentThread)
+{
+	J9JavaVM* vm = currentThread->javaVM;
+	U_32 newSize = vm->sharedCacheAPI->newCacheSize;
+	SH_CacheMap* cm = (SH_CacheMap *)vm->sharedClassConfig->sharedClassCache;
+
+	if ((U_32)-1 != newSize) {
+		cm->resizeCache(currentThread, newSize);
+	}
 }
 
 } /* extern "C" */

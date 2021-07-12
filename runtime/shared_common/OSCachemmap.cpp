@@ -1746,6 +1746,50 @@ SH_OSCachemmap::getTotalSize()
 	return (U_32)_actualFileLength;
 }
 
+bool 
+SH_OSCachemmap::fixAndWriteOSCacheHeader(J9VMThread* currentThread, IDATA fd, I_32 size)
+{
+	bool rc = false;
+	U_32* fieldToFix = NULL;
+	LastErrorInfo lastErrorInfo = {0};
+	PORT_ACCESS_FROM_VMC(currentThread);
+	OSCachemmap_header_version_current *headerCopy = (OSCachemmap_header_version_current *)j9mem_allocate_memory(MMAP_CACHEHEADERSIZE, J9MEM_CATEGORY_VM);
+	
+	if (NULL == headerCopy) {
+		lastErrorInfo.lastErrorCode = j9error_last_error_number();
+		lastErrorInfo.lastErrorMsg = j9error_last_error_message();
+		errorHandler(J9NLS_SHRC_OSCACHE_ALLOC_FAILED, &lastErrorInfo);
+		goto done;
+	}
+	memcpy(headerCopy, _headerStart, MMAP_CACHEHEADERSIZE);
+
+	if ((fieldToFix = (U_32*)getMmapHeaderFieldAddressForGen(headerCopy, _activeGeneration, OSCACHE_HEADER_FIELD_SIZE))) {
+		*fieldToFix += size;
+	} else {
+		Trc_SHR_Assert_ShouldNeverHappen();
+		goto done;
+	}
+	if ((fieldToFix = (U_32*)getMmapHeaderFieldAddressForGen(headerCopy, _activeGeneration, OSCACHE_HEADER_FIELD_DATA_LENGTH))) {
+		*fieldToFix += size;
+	} else {
+		Trc_SHR_Assert_ShouldNeverHappen();
+		goto done;
+	}
+	
+	if (MMAP_CACHEHEADERSIZE != j9file_write(fd, (void*)headerCopy, MMAP_CACHEHEADERSIZE)) {
+		lastErrorInfo.lastErrorCode = j9error_last_error_number();
+		lastErrorInfo.lastErrorMsg = j9error_last_error_message();
+		errorHandler(J9NLS_SHRC_OSCACHE_MMAP_ERROR_WRITE_MMAP_HEADER, &lastErrorInfo);
+		goto done;
+	}
+	rc = true;
+done:
+	if (NULL != headerCopy) {
+		j9mem_free_memory(headerCopy);
+	}
+	return rc;
+}
+
 UDATA
 SH_OSCachemmap::getJavacoreData(J9JavaVM *vm, J9SharedClassJavacoreDataDescriptor* descriptor)
 {

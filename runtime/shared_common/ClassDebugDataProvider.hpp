@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2017 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -95,7 +95,7 @@ private:
 	void updateLNTWithSize(UDATA size);
 	void updateLVTWithSize(UDATA size);
 	bool isOk(J9VMThread* currentThread, bool assertOnFailure, bool setCorruptionCode, bool assertForCorruptionCode);
-
+	void changePartialPageProtection(J9VMThread *currentThread, AbstractMemoryPermission * permSetter, void *addr, bool readOnly, bool phaseCheck = true);
 	friend class DebugAreaUnitTests;
 
 };

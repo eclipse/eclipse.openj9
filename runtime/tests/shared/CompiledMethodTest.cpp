@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -113,6 +113,7 @@ IDATA storeAndFindTest(J9JavaVM* vm)
 	const U_8* duplicateMethod = NULL;
 	const U_8* newMethod15 = NULL;
 	const U_8* newMethod25 = NULL;
+	void* romStartAddr = NULL;
 	UDATA flags = 0;
 	BlockPtr methodNameAndSigMem = NULL;
 	char methodspec[] = METHOD_SPEC;
@@ -241,7 +242,8 @@ IDATA storeAndFindTest(J9JavaVM* vm)
 	 */
 
 	/* We will set method name and signature for romMethod1. Reserve enough space between romMethod1 and its next method (romMethod5) in the cache */
-	romMethod1 = (J9ROMMethod*)(cache + sizeof(J9SharedCacheHeader));
+	cacheObject1->getRomClassAreaBounds(&romStartAddr, NULL);
+	romMethod1 = (J9ROMMethod*)romStartAddr;
 	romMethod5 = (J9ROMMethod*)((UDATA)romMethod1 + (sizeof(J9ROMMethod) + METHOD_NAME_SIZE + METHOD_SIG_SIZE));
 	romMethod4 = (J9ROMMethod*)((UDATA)romMethod5 + sizeof(J9ROMMethod));
 	romMethod3 = (J9ROMMethod*)((UDATA)romMethod4 + sizeof(J9ROMMethod));

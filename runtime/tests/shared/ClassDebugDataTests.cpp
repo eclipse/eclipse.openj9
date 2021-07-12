@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2016 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -131,6 +131,8 @@ testClassDebugDataTests(J9JavaVM* vm)
 	PORT_ACCESS_FROM_JAVAVM(vm);
 	const UDATA onemeg = (1024 * 1024);
 	DebugAreaUnitTests tester;
+	
+	UnitTest::unitTest = UnitTest::CLASS_DEBUG_DATA_TEST;
 
 	if (ClassDebugDataProvider::recommendedSize(onemeg, 4) > 0) {
 		rc |= tester.debugmemtest1(vm);
@@ -156,6 +158,9 @@ testClassDebugDataTests(J9JavaVM* vm)
 	}
 
 	j9tty_printf(PORTLIB, "%s: %s\n", testName, TEST_PASS == rc ? "PASS" : "FAIL");
+
+	UnitTest::unitTest = UnitTest::NO_TEST;
+
 	if (rc == TEST_ERROR) {
 		return TEST_ERROR;
 	} else {
