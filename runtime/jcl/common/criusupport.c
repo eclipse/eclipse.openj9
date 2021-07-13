@@ -71,6 +71,31 @@ setupJNIFieldIDs(JNIEnv *env)
 		vmFuncs->setNativeOutOfMemoryError(currentThread, 0, 0);
 		vmFuncs->internalExitVMToJNI(currentThread);
 	}
+
+	if (NULL == vm->criuOptionsClass) {
+		jclass criuOptionsClass = (*env)->FindClass(env, "org/eclipse/openj9/criu/CRIUSupport$CRIUOptions");
+		Assert_JCL_notNull(criuOptionsClass);
+		vm->criuOptionsClass = (*env)->NewGlobalRef(env, criuOptionsClass);
+
+		if (NULL != vm->criuOptionsClass) {
+			vm->criuOptionsCheckPointDir = (*env)->GetFieldID(env, vm->criuOptionsClass, "checkPointDir", "Ljava/lang/String;");
+			Assert_JCL_notNull(vm->criuOptionsCheckPointDir);
+			vm->criuOptionsKeepRunning  = (*env)->GetFieldID(env, vm->criuOptionsClass, "keepRunning", "Z");
+			Assert_JCL_notNull(vm->criuOptionsKeepRunning);
+			vm->criuOptionsShellJob = (*env)->GetFieldID(env, vm->criuOptionsClass, "shellJob", "Z");
+			Assert_JCL_notNull(vm->criuOptionsShellJob);
+			vm->criuOptionsExtUnixSupport = (*env)->GetFieldID(env, vm->criuOptionsClass, "extUnixSupport", "Z");
+			Assert_JCL_notNull(vm->criuOptionsExtUnixSupport);
+			vm->criuOptionsLogLevel = (*env)->GetFieldID(env, vm->criuOptionsClass, "logLevel", "I");
+			Assert_JCL_notNull(vm->criuOptionsLogLevel);
+			vm->criuOptionsLogFile = (*env)->GetFieldID(env, vm->criuOptionsClass, "logFile", "Ljava/lang/String;");
+			Assert_JCL_notNull(vm->criuOptionsLogFile);
+		} else {
+			vmFuncs->internalEnterVMFromJNI(currentThread);
+			vmFuncs->setNativeOutOfMemoryError(currentThread, 0, 0);
+			vmFuncs->internalExitVMToJNI(currentThread);
+		}
+	}
 }
 
 static jobject
@@ -194,14 +219,7 @@ free:
 
 
 jobject JNICALL
-Java_org_eclipse_openj9_criu_CRIUSupport_checkpointJVMImpl(JNIEnv *env,
-							jclass unused,
-							jstring checkPointDir,
-							jboolean keepRunning,
-							jboolean shellJob,
-							jboolean extUnixSupport,
-							jint logLevel,
-							jstring logFile)
+Java_org_eclipse_openj9_criu_CRIUSupport_checkpointJVMImpl(JNIEnv *env, jclass unused, jobject criuOptions)
 {
 	J9VMThread *currentThread = (J9VMThread*)env;
 	J9JavaVM *vm = currentThread->javaVM;
@@ -220,6 +238,12 @@ Java_org_eclipse_openj9_criu_CRIUSupport_checkpointJVMImpl(JNIEnv *env,
 		char logFileBuf[STRING_BUFFER_SIZE];
 		char *logFileChars = logFileBuf;
 		IDATA systemReturnCode = 0;
+		jstring checkPointDir = (*env)->GetObjectField(env, criuOptions, vm->criuOptionsCheckPointDir);
+		jboolean keepRunning = (*env)->GetBooleanField(env, criuOptions, vm->criuOptionsKeepRunning);
+		jboolean shellJob = (*env)->GetBooleanField(env, criuOptions, vm->criuOptionsShellJob);
+		jboolean extUnixSupport = (*env)->GetBooleanField(env, criuOptions, vm->criuOptionsExtUnixSupport);
+		jint logLevel = (*env)->GetIntField(env, criuOptions, vm->criuOptionsLogLevel);
+		jstring logFile = (*env)->GetObjectField(env, criuOptions, vm->criuOptionsLogFile);
 		PORT_ACCESS_FROM_VMC(currentThread);
 
 		vmFuncs->internalEnterVMFromJNI(currentThread);

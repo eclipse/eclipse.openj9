@@ -5548,6 +5548,13 @@ typedef struct J9JavaVM {
 	jfieldID criuSupportJVMRestoreFailure;
 	jclass criuResultClass;
 	jmethodID criuResultInit;
+	jclass criuOptionsClass;
+	jfieldID criuOptionsCheckPointDir;
+	jfieldID criuOptionsKeepRunning;
+	jfieldID criuOptionsShellJob;
+	jfieldID criuOptionsExtUnixSupport;
+	jfieldID criuOptionsLogLevel;
+	jfieldID criuOptionsLogFile;
 #endif /* defined(J9VM_OPT_CRIU_SUPPORT) */
 	J9CRIUCheckpointState *checkpointState;
 } J9JavaVM;
