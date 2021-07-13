@@ -1161,7 +1161,7 @@ jboolean JNICALL
 Java_org_eclipse_openj9_criu_CRIUSupport_isCheckpointAllowed(JNIEnv *env, jclass unused);
 
 jobject JNICALL
-Java_org_eclipse_openj9_criu_CRIUSupport_checkpointJVMImpl(JNIEnv *env, jclass unused, jobject criuOptions);
+Java_org_eclipse_openj9_criu_CRIUSupport_checkpointJVMImpl(JNIEnv *env, jobject criuSupport);
 
 /* com_ibm_jvm_Stats.c */
 void JNICALL
