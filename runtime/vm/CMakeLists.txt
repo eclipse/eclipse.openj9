@@ -28,9 +28,8 @@ if(OMR_TOOLCONFIG STREQUAL "msvc")
 	# Note: the updated variables are scoped to this directory
 	set(OMR_ENHANCED_WARNINGS OFF)
 	set(OMR_WARNINGS_AS_ERRORS OFF)
-	set(OMR_BASE_WARNING_FLAGS)
-	omr_append_flags(CMAKE_C_FLAGS ${OMR_ENHANCED_WARNING_FLAG} ${OMR_WARNING_AS_ERROR_FLAG})
-	omr_append_flags(CMAKE_CXX_FLAGS ${OMR_ENHANCED_WARNING_FLAG} ${OMR_WARNING_AS_ERROR_FLAG})
+	omr_append_flags(CMAKE_C_FLAGS ${OMR_C_ENHANCED_WARNINGS_FLAG} ${OMR_C_WARNINGS_AS_ERROR_FLAG})
+	omr_append_flags(CMAKE_CXX_FLAGS ${OMR_CXX_ENHANCED_WARNINGS_FLAG} ${OMR_CXX_WARNINGS_AS_ERROR_FLAG})
 endif()
 
 set(interp_flags_to_remove) # list of flags removed when compiling the interpreter
