@@ -307,7 +307,8 @@ j9gc_initialize_heap(J9JavaVM *vm, IDATA *memoryParameterTable, UDATA heapBytesR
 	PORT_ACCESS_FROM_JAVAVM(vm);
 	J9VMDllLoadInfo *loadInfo = getGCDllLoadInfo(vm);
 
-	if (J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_PORTABLE_SHARED_CACHE)) {
+	if (J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_PORTABLE_SHARED_CACHE)
+		|| J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_CRIU_SUPPORT)) {
 		extensions->shouldForceLowMemoryHeapCeilingShiftIfPossible = true;
 	}
 
@@ -2907,7 +2908,10 @@ gcInitializeDefaults(J9JavaVM* vm)
 
 				if (hwSupported) {
 					/* Software Barrier request overwrites HW usage on supported HW */
-					extensions->concurrentScavengerHWSupport = hwSupported && !extensions->softwareRangeCheckReadBarrier && !J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_PORTABLE_SHARED_CACHE);
+					extensions->concurrentScavengerHWSupport = hwSupported 
+						&& !extensions->softwareRangeCheckReadBarrier 
+						&& !J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_PORTABLE_SHARED_CACHE)
+						&& !J9_ARE_ANY_BITS_SET(vm->extendedRuntimeFlags2, J9_EXTENDED_RUNTIME2_ENABLE_CRIU_SUPPORT);
 					extensions->concurrentScavenger = hwSupported || extensions->softwareRangeCheckReadBarrier;
 				} else {
 					extensions->concurrentScavengerHWSupport = false;

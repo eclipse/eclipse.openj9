@@ -558,7 +558,7 @@ static TR::Instruction *generatePrefetchAfterHeaderAccess(TR::Node              
    TR::Instruction *instr = NULL;
 
    static const char *prefetch = feGetEnv("TR_EnableSoftwarePrefetch");
-   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELCORE2) == cg->getX86ProcessorInfo().isIntelCore2(), "isIntelCore2() failed\n");
+   TR_ASSERT_FATAL(comp->compileRelocatableCode() || comp->isOutOfProcessCompilation() || comp->compilePortableCode() || comp->target().cpu.is(OMR_PROCESSOR_X86_INTELCORE2) == cg->getX86ProcessorInfo().isIntelCore2(), "isIntelCore2() failed\n");
    if (prefetch && comp->getMethodHotness()>=scorching && comp->target().cpu.is(OMR_PROCESSOR_X86_INTELCORE2))
       {
       int32_t fieldOffset = 0;
