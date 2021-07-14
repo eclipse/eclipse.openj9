@@ -149,8 +149,11 @@ public:
       Java_lang_invoke_BruteArgumentMoverHandle_extra,
       Java_lang_invoke_DynamicInvokerHandle_site,
       Java_lang_invoke_CallSite_target,
+      Java_lang_invoke_LambdaForm_vmentry,
       Java_lang_invoke_MutableCallSite_target,
       Java_lang_invoke_MutableCallSiteDynamicInvokerHandle_mutableSite,
+      Java_lang_invoke_MemberName_vmtarget,
+      Java_lang_invoke_MethodHandle_form,
       Java_lang_invoke_MethodHandle_thunks,
       Java_lang_invoke_MethodHandle_type,
       Java_lang_invoke_MethodType_ptypes,
@@ -227,4 +230,3 @@ public:
 }
 
 #endif
-

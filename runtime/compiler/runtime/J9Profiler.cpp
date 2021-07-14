@@ -542,9 +542,9 @@ void TR_ValueProfiler::modifyTrees()
              !methodSymRef->isUnresolved() && !methodSymbol->isHelper() /* && !firstChild->getByteCodeInfo().doNotProfile() */)
             {
             TR::ResolvedMethodSymbol *method = firstChild->getSymbol()->getResolvedMethodSymbol();
-            if ((method->getRecognizedMethod() == TR::java_math_BigDecimal_add) ||
+            if (method && ((method->getRecognizedMethod() == TR::java_math_BigDecimal_add) ||
                 (method->getRecognizedMethod() == TR::java_math_BigDecimal_subtract) ||
-                (method->getRecognizedMethod() == TR::java_math_BigDecimal_multiply))
+                (method->getRecognizedMethod() == TR::java_math_BigDecimal_multiply)))
                {
                if (!firstChild->getByteCodeInfo().doNotProfile())
                   addProfilingTrees(firstChild, tt, 0, BigDecimalInfo);

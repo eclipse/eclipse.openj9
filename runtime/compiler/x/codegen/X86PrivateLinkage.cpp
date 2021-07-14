@@ -1741,6 +1741,7 @@ TR::Register *J9::X86::PrivateLinkage::buildIndirectDispatch(TR::Node *callNode)
       TR::Method       *method       = methodSymbol->getMethod();
       if (methodSymbol->isComputed())
          {
+         if (methodSymbol->isComputedStatic() && methodSymbol->getMandatoryRecognizedMethod() != TR::unknownMethod)
          switch (method->getMandatoryRecognizedMethod())
             {
             case TR::java_lang_invoke_ComputedCalls_dispatchVirtual:
