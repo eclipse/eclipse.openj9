@@ -1,6 +1,6 @@
 
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -90,6 +90,11 @@ public:
 	virtual const jchar* jniGetStringCritical(J9VMThread* vmThread, jstring str, jboolean *isCopy);
 	virtual void jniReleaseStringCritical(J9VMThread* vmThread, jstring str, const jchar* elems);
 
+	virtual void referenceReprocess(J9VMThread *vmThread, J9Object *refObject)
+	{
+		/* Equivalent to J9WriteBarrierBatchStore */
+		preBatchObjectStore(vmThread, refObject);
+	}
 };
 
 #endif /* VLHGCACCESSBARRIER_HPP_ */

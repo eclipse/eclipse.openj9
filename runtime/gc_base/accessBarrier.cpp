@@ -800,5 +800,40 @@ j9gc_objaccess_checkClassLive(J9JavaVM *javaVM, J9Class *classPtr)
 #endif /* defined(J9VM_GC_DYNAMIC_CLASS_UNLOADING) */
 }
 
+J9Object*
+j9gc_objaccess_referenceGet(J9VMThread *vmThread, j9object_t refObject)
+{
+	MM_ObjectAccessBarrier *barrier = MM_GCExtensions::getExtensions(vmThread)->accessBarrier;
+	return barrier->referenceGet(vmThread, refObject);
+}
+
+void
+j9gc_objaccess_referenceReprocess(J9VMThread *vmThread, j9object_t refObject)
+{
+	MM_ObjectAccessBarrier *barrier = MM_GCExtensions::getExtensions(vmThread)->accessBarrier;
+	barrier->referenceReprocess(vmThread, refObject);
+}
+
+BOOLEAN
+checkStringConstantsLive(J9JavaVM *javaVM, j9object_t stringOne, j9object_t stringTwo)
+{
+	MM_ObjectAccessBarrier *barrier = MM_GCExtensions::getExtensions(javaVM)->accessBarrier;
+	return barrier->checkStringConstantsLive(javaVM, stringOne, stringTwo);
+}
+
+BOOLEAN
+checkStringConstantLive(J9JavaVM *javaVM, j9object_t string)
+{
+	MM_ObjectAccessBarrier *barrier = MM_GCExtensions::getExtensions(javaVM)->accessBarrier;
+	return barrier->checkStringConstantLive(javaVM, string);
+}
+
+void
+j9gc_objaccess_jniDeleteGlobalReference(J9VMThread *vmThread, J9Object *reference)
+{
+	MM_ObjectAccessBarrier *barrier = MM_GCExtensions::getExtensions(vmThread->javaVM)->accessBarrier;
+	barrier->jniDeleteGlobalReference(vmThread, reference);
+}
+
 } /* extern "C" */
 

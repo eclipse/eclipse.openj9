@@ -428,7 +428,8 @@ SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-excepti
 	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_CARDMARK" signature="I"/>
 	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_CARDMARK_INCREMENTAL" signature="I"/>
 	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_CARDMARK_AND_OLDCHECK" signature="I"/>
-	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_REALTIME" signature="I"/>
+	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_SATB" signature="I"/>
+	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_WRITE_BARRIER_TYPE_SATB_AND_OLDCHECK" signature="I"/>
 
 	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_ALLOCATION_TYPE" signature="I"/>
 	<staticfieldref class="com/ibm/oti/vm/VM" name="J9_GC_ALLOCATION_TYPE_TLH" signature="I"/>

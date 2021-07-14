@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -543,7 +543,7 @@ allLiveClassesNextDo(J9ClassWalkState* state)
 	J9Class* clazzPtr = NULL;
 	J9Class* clazzPtrCandidate = NULL;
 	J9JavaVM* vm = state->vm;
-	const BOOLEAN needCheckInGC = (J9_GC_WRITE_BARRIER_TYPE_REALTIME == vm->gcWriteBarrierType);
+	const BOOLEAN needCheckInGC = (J9_GC_POLICY_METRONOME == vm->gcPolicy);
 
 	do {
 		clazzPtrCandidate = allClassesNextDo(state);

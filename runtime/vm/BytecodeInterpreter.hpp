@@ -3251,7 +3251,6 @@ done:
 	VMINLINE VM_BytecodeAction
 	inlReferenceGetImpl(REGISTER_ARGS_LIST)
 	{
-		/* Only called from java for metronome GC policy */
 		j9object_t referent = _vm->memoryManagerFunctions->j9gc_objaccess_referenceGet(_currentThread, *(j9object_t*)_sp);
 		returnObjectFromINL(REGISTER_ARGS, referent, 1);
 		return EXECUTE_BYTECODE;
