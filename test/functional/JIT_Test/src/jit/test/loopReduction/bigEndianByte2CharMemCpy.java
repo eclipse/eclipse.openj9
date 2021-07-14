@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corp. and others
+ * Copyright (c) 2000, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -21,7 +21,11 @@
  *******************************************************************************/
 package jit.test.loopReduction;
 
-public class byte2CharMemCpy extends base {
+/**
+ * The inner loop will only be detected and transformed on big endian architectures.
+ * Little endian architectures will run the loop untransformed.
+ */
+public class bigEndianByte2CharMemCpy extends base {
    static byte array1[] = new byte [10000];
    static char array2[] = new char [10000];
 

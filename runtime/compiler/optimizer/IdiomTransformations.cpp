@@ -855,7 +855,7 @@ indexContainsArray(TR::Compilation *comp, TR::Node *index, vcount_t visitCount)
 
    if (comp->trace(OMR::idiomRecognition))
       traceMsg(comp, "analyzing node %p\n", index);
-   
+
    if (index->getOpCode().hasSymbolReference() &&
          index->getSymbolReference()->getSymbol()->isArrayShadowSymbol())
       {
@@ -877,7 +877,7 @@ indexContainsArrayAccess(TR::Compilation *comp, TR::Node *aXaddNode)
    {
    if (comp->trace(OMR::idiomRecognition))
       traceMsg(comp, "axaddnode %p\n", aXaddNode);
-   
+
    TR::Node *loadNode1, *loadNode2, *topLevelIndex;
    findIndexLoad(aXaddNode, loadNode1, loadNode2, topLevelIndex);
    // topLevelIndex now contains the actual expression q in a[q]
@@ -5734,7 +5734,7 @@ CISCTransform2ArrayCopySub(TR_CISCTransformer *trans, TR::Node *indexRepNode, TR
 
 
    int32_t postIncrement = checkForPostIncrement(comp, block, cmpIfAllCISCNode->getHeadOfTrNodeInfo()->_node, exitVarSymRef->getSymbol());
-   
+
    if (disptrace)
       traceMsg(comp, "detected postIncrement %d modLength %d modStartIdx %d\n", postIncrement, modLength, modStartIdx);
 
@@ -6355,7 +6355,7 @@ makeMemCpyByteToCharGraph(TR::Compilation *c, int32_t ctrl)
 
    tgt->setEntryNode(ent);
    tgt->setExitNode(n9);
-   tgt->setImportantNodes(nl12, ns4, ns2);
+   tgt->setImportantNodes(isBigEndian ? nl12 : nl22, ns4, ns2);
    tgt->setNumDagIds(16);
    tgt->createInternalData(1);
 

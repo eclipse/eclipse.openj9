@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2000, 2018 IBM Corp. and others
+ * Copyright (c) 2000, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -33,7 +33,8 @@ public class idiomTests
    public void testTRTOArray(Context c) { new TRTOArray().runTest(c); }
    public void testLongMemCpy(Context c) { new longMemCpy().runTest(c); }
    public void testByteMemCpy(Context c) { new byteMemCpy().runTest(c); }
-   public void testByte2CharMemCpy(Context c) { new byte2CharMemCpy().runTest(c); }
+   public void testBigEndianByte2CharMemCpy(Context c) { new bigEndianByte2CharMemCpy().runTest(c); }
+   public void testLittleEndianByte2CharMemCpy(Context c) { new littleEndianByte2CharMemCpy().runTest(c); }
    public void testChar2ByteMemCpy(Context c) { new char2ByteMemCpy().runTest(c); }
    public void testMEMCPYChar2Byte2(Context c) { new MEMCPYChar2Byte2().runTest(c); }
    public void testByteMemSet(Context c) { new byteMemSet().runTest(c); }
