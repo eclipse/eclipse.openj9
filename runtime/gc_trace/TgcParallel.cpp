@@ -35,6 +35,10 @@
 #include "TgcExtensions.hpp"
 #include "VMThreadListIterator.hpp"
 
+#if defined(J9VM_GC_MODRON_SCAVENGER)
+#include "Scavenger.hpp"
+#endif /* OMR_GC_MODRON_SCAVENGER */
+
 /****************************************
  * Hook callbacks
  ****************************************
@@ -258,7 +262,7 @@ tgcHookLocalGcEnd(J9HookInterface** hook, uintptr_t eventNum, void* eventData, v
 	tgcExtensions->printf("          gc thrID     busy    stall   acquire   release   acquire   release   acquire     split avg split  alias to    deep      total deepest\n");
 	tgcExtensions->printf("                   (micros) (micros)  freelist  freelist  scanlist  scanlist      lock    arrays arraysize copycache   lists  deep objs    list\n");
 
-	scavengeTotalTime = extensions->scavengerStats._endTime - extensions->scavengerStats._startTime;
+	scavengeTotalTime = extensions->scavenger->_cycleEndTime - extensions->scavenger->_cycleStartTime;
 	uintptr_t gcCount = extensions->scavengerStats._gcCount;
 
 	GC_VMThreadListIterator scavengeThreadListIterator(vmThread);
