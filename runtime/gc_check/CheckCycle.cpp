@@ -1,6 +1,6 @@
 
 /*******************************************************************************
- * Copyright (c) 1991, 2019 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -301,6 +301,11 @@ top:
 #if defined(J9VM_GC_MODRON_SCAVENGER) || defined(J9VM_GC_VLHGC)
 						if (try_scan(&scan_start, "midscavenge")) {
 							miscFlags |= J9MODRON_GCCHK_MISC_MIDSCAVENGE;
+							continue;
+						}
+
+						if (try_scan(&scan_start, "indexabledataaddress")) {
+							miscFlags |= J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS;
 							continue;
 						}
 #endif /* J9VM_GC_MODRON_SCAVENGER  || defined(J9VM_GC_VLHGC) */

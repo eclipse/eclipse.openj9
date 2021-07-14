@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -23,6 +23,8 @@ package com.ibm.j9ddr.vm29.j9.gc;
 
 import com.ibm.j9ddr.CorruptDataException;
 import com.ibm.j9ddr.vm29.pointer.generated.J9IndexableObjectPointer;
+import com.ibm.j9ddr.vm29.pointer.helper.J9IndexableObjectHelper;
+import com.ibm.j9ddr.vm29.pointer.VoidPointer;
 import com.ibm.j9ddr.vm29.types.UDATA;
 
 class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
@@ -67,4 +69,52 @@ class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
 		UDATA totalFootprint = spineSize.add(externalArrayletSize);
 		return totalFootprint;
 	}
+
+	@Override
+	public VoidPointer getDataPointerForContiguous(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		//return J9IndexableObjectHelper.getDataAddrForContiguous(arrayPtr);
+		return super.getDataPointerForContiguous(arrayPtr);
+	}
+
+	public VoidPointer getDataPointerForDiscontiguous(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		//return J9IndexableObjectHelper.getDataAddrForDiscontiguous(arrayPtr);
+		return VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize()));
+	}
+
+	public VoidPointer getDataAddrForIndexable(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		if(super.isInlineContiguousArraylet(arrayPtr)) {
+			return J9IndexableObjectHelper.getDataAddrForContiguous(arrayPtr);
+		} else {
+			return J9IndexableObjectHelper.getDataAddrForDiscontiguous(arrayPtr);
+		}
+	}
+
+	@Override
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		boolean isCorrectDataPointer = true;
+			if(super.isInlineContiguousArraylet(arrayPtr)) {
+				isCorrectDataPointer = J9IndexableObjectHelper.getDataAddrForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
+			} else {
+				isCorrectDataPointer = J9IndexableObjectHelper.getDataAddrForDiscontiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
+			}
+		return isCorrectDataPointer;
+	}
+
+	/*
+		@Override
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		boolean isCorrectDataPointer = true;
+			if(super.isInlineContiguousArraylet(arrayPtr)) {
+				isCorrectDataPointer = getDataPointerForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
+			} else {
+				isCorrectDataPointer = getDataPointerForDiscontiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
+			}
+		return isCorrectDataPointer;
+	}
+	*/
 }

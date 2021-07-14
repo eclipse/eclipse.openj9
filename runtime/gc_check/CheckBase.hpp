@@ -1,6 +1,6 @@
 
 /*******************************************************************************
- * Copyright (c) 1991, 2018 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -101,6 +101,7 @@
 #define J9MODRON_GCCHK_MISC_ALWAYS_DUMP_STACK ((UDATA)0x00004000)
 #define J9MODRON_GCCHK_MISC_DARKMATTER ((UDATA)0x00008000)
 #define J9MODRON_GCCHK_MISC_MIDSCAVENGE ((UDATA)0x00010000)
+#define J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS ((UDATA)0x00020000)
 /** @} */
 
 /**
@@ -147,7 +148,6 @@
 #define J9MODRON_GCCHK_RC_CLASS_STATICS_REFERENCE_IS_NOT_IN_SCANNING_RANGE ((UDATA) 32)
 #define J9MODRON_GCCHK_RC_CLASS_STATICS_WRONG_NUMBER_OF_REFERENCES ((UDATA) 33)
 
-/* obsolete code 34 */
 /* obsolete code 35 */
 /* obsolete code 36 */
 /* obsolete code 37 */
@@ -155,6 +155,9 @@
 #define J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_FOR_ARRAY ((UDATA) 39)
 #define J9MODRON_GCCHK_RC_REPLACED_CLASS_HAS_NO_HOTSWAP_FLAG ((UDATA) 40)
 #define J9MODRON_GCCHK_RC_CLASS_IS_UNLOADED ((UDATA) 48)
+
+/* Special error codes for when J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS is set */
+#define J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS ((UDATA) 34)
 
 /* Special error codes for when J9MODRON_GCCHK_VERIFY_FLAGS is set (all stages)*/
 #define J9MODRON_GCCHK_RC_INVALID_FLAGS ((UDATA)13)

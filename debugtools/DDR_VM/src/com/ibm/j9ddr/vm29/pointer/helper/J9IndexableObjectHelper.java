@@ -142,6 +142,34 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 		return J9IndexableObjectDiscontiguous.SIZEOF;
 	}
 
+	public static VoidPointer getDataAddrForContiguous(J9IndexableObjectPointer objPointer) throws CorruptDataException 
+	{
+		/*
+		if (mixedReferenceMode) {
+			if (compressObjectReferences) {
+				return VoidPointer.cast((J9IndexableObjectContiguousCompressed)objPointer.dataAddr);
+			}
+			return VoidPointer.cast((J9IndexableObjectContiguousFull)objPointer.dataAddr);
+		} 
+		*/
+		//return VoidPointer.cast(((J9IndexableObjectContiguous)objPointer).dataAddr);
+		return VoidPointer.cast((J9IndexableObjectContiguousPointer.cast(objPointer)).dataAddr());
+	}
+
+	public static VoidPointer getDataAddrForDiscontiguous(J9IndexableObjectPointer objPointer) throws CorruptDataException 
+	{
+		/*
+		if (mixedReferenceMode) {
+			if (compressObjectReferences) {
+				return VoidPointer.cast((J9IndexableObjectDiscontiguousCompressed)objPointer.dataAddr);
+			}
+			return VoidPointer.cast((J9IndexableObjectDiscontiguousFull)objPointer.dataAddr);
+		}
+		*/
+		//return VoidPointer.cast(((J9IndexableObjectDiscontiguous)objPointer).dataAddr);
+		return VoidPointer.cast((J9IndexableObjectDiscontiguousPointer.cast(objPointer)).dataAddr());
+	}
+
 	/**
 	 * @param objPointer array object who's elements we are outputting to dst
 	 * @param index the desired index within then array
@@ -152,6 +180,15 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 	public static VoidPointer getElementEA(J9IndexableObjectPointer objPointer, int index, int dataSize) throws CorruptDataException
 	{
 		return ObjectModel.getElementAddress(objPointer, index, dataSize);
+	}
+
+	/**
+	 * @param objPointer array object who's data address validity we are checking
+	 * @throws CorruptDataException 
+	 */
+	public static boolean isCorrectDataPointer(J9IndexableObjectPointer objPointer) throws CorruptDataException
+	{
+		return ObjectModel.isCorrectDataPointer(objPointer);
 	}
 	
 	/**

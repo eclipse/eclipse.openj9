@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2015 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -79,7 +79,8 @@ public final class CheckBase
 	public static final int J9MODRON_GCCHK_MISC_ALWAYS_DUMP_STACK = 0x00004000;
 	public static final int J9MODRON_GCCHK_MISC_DARKMATTER = 0x00008000;
 	public static final int J9MODRON_GCCHK_MISC_MIDSCAVENGE = 0x00010000;
-	public static final int J9MODRON_GCCHK_MISC_OWNABLESYNCHRONIZER_CONSISTENCY = 0x00020000;
+	public static final int J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS = 0x00020000;
+	public static final int J9MODRON_GCCHK_MISC_OWNABLESYNCHRONIZER_CONSISTENCY = 0x00040000;
 
 	/*
 	 * Return codes for iterator functions.
@@ -123,6 +124,9 @@ public final class CheckBase
 	public static final int J9MODRON_GCCHK_RC_REVERSED_FORWARDED_OUTSIDE_EVACUATE = 49;
 
 	public static final int J9MODRON_GCCHK_RC_OWNABLE_SYNCHRONIZER_INVALID_CLASS = 38;
+
+	/* Special error codes for when J9MODRON_GCCHK_VALID_INDEXABLE_DATA_ADDRESS is set */
+	public static final int J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS = 34;
 
 	/* Special error codes for when J9MODRON_GCCHK_VERIFY_FLAGS is set (all stages)*/
 	public static final int J9MODRON_GCCHK_RC_INVALID_FLAGS = 13;

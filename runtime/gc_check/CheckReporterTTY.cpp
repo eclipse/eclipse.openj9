@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -90,6 +90,10 @@ const static char *errorTypes[] = {
 	"class ramStatics must be NULL for hot swapped class", /* J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_POINTS_TO_STATICS (31) */
 	"class ramStatics field points to object but out of GC scan range", /* J9MODRON_GCCHK_RC_CLASS_STATICS_REFERENCE_IS_NOT_IN_SCANNING_RANGE (32) */
 	"class ramStatics number of references not equal specified in ROM class", /* J9MODRON_GCCHK_RC_CLASS_STATICS_WRONG_NUMBER_OF_REFERENCES (33) */
+	"invalid indexable data address", /* J9MODRON_GCCHK_RC_INVALID_INDEXABLE_DATA_ADDRESS (34) */
+	"obsolete code 35", /* obsolete code (35) */
+	"obsolete code 36", /* obsolete code (36) */
+	"obsolete code 37", /* obsolete code (37) */
 	"class object not a subclass of java.util.concurrent.locks.AbstractOwnableSynchronizer", /* J9MODRON_GCCHK_RC_OWNABLE_SYNCHRONIZER_INVALID_CLASS (38) */
 	"array class can not be hot swapped", /* J9MODRON_GCCHK_RC_CLASS_HOT_SWAPPED_FOR_ARRAY (39) */
 	"replaced class has no hot swapped out flag set", /* J9MODRON_GCCHK_RC_REPLACED_CLASS_HAS_NO_HOTSWAP_FLAG (40) */
@@ -196,15 +200,16 @@ GC_CheckReporterTTY::report(GC_CheckError *error)
 void 
 GC_CheckReporterTTY::reportObjectHeader(GC_CheckError *error, J9Object *objectPtr, const char *prefix)
 {
+	UDATA headerSize;
 	MM_GCExtensionsBase* extensions = MM_GCExtensions::getExtensions(_javaVM);
 	const char *prefixString = prefix ? prefix : "";
-	UDATA headerSize = extensions->objectModel.getHeaderSize(objectPtr);
 	PORT_ACCESS_FROM_PORT(_portLibrary);
 
-	if (!shouldReport(error)) {
+	if (!shouldReport(error) || NULL == J9GC_J9OBJECT_CLAZZ(objectPtr, extensions)) {
 		return;
 	}
 
+	headerSize = extensions->objectModel.getHeaderSize(objectPtr);
 	if (extensions->objectModel.isIndexable(objectPtr)) {
 		j9tty_printf(PORTLIB, "  <gc check (%zu): %sIObject %p header:", error->_errorNumber, prefixString, objectPtr);
 	} else {

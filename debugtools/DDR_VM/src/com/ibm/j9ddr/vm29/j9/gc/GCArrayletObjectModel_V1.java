@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -101,5 +101,11 @@ class GCArrayletObjectModel_V1 extends GCArrayletObjectModelBase
 		UDATA externalArrayletSize = externalArrayletsSize(arrayPtr);
 		UDATA totalFootprint = spineSize.add(externalArrayletSize);
 		return totalFootprint;
+	}
+
+	@Override
+	public boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException
+	{
+		return true;
 	}
 }

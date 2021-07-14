@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -286,6 +286,9 @@ public abstract class GCArrayletObjectModelBase extends GCArrayObjectModel
 	{
 		return VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize()));
 	}
+
+
+	public abstract boolean isCorrectDataPointer(J9IndexableObjectPointer arrayPtr) throws CorruptDataException;
 
 	@Override
 	public UDATA getHashcodeOffset(J9IndexableObjectPointer array) throws CorruptDataException

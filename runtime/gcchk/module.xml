@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-Copyright (c) 2006, 2019 IBM Corp. and others
+Copyright (c) 2006, 2021 IBM Corp. and others
 
 This program and the accompanying materials are made available under
 the terms of the Eclipse Public License 2.0 which accompanies this
@@ -78,6 +78,7 @@ SPDX-License-Identifier: EPL-2.0 OR Apache-2.0 OR GPL-2.0 WITH Classpath-excepti
 			<library name="omrgcstructs" type="external"/>
 			<library name="j9gcstats"/>
 			<library name="omrgcstats" type="external"/>
+			<library name="omrglue" type="external"/>
 			<library name="j9gccheck"/>
 		</libraries>
 	</artifact>
