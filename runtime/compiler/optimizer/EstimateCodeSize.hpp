@@ -89,7 +89,7 @@ class TR_EstimateCodeSize
 
    int32_t getSize()                   { return _realSize; }
    virtual int32_t getOptimisticSize() { return 0; } // override in subclasses that support partial inlining
-   EcsCleanupErrorStates getError()    { return _error; }
+   const char *getError();
    int32_t getSizeThreshold()          { return _sizeThreshold; }
    bool aggressivelyInlineThrows()     { return _aggressivelyInlineThrows; }
    bool recursedTooDeep()              { return _recursedTooDeep; }

@@ -105,6 +105,22 @@ TR_EstimateCodeSize::calculateCodeSize(TR_CallTarget *calltarget, TR_CallStack *
    return retval;
    }
 
+const char *
+TR_EstimateCodeSize::getError()
+   {
+      switch(_error)
+         {
+            case ECS_NORMAL: return "ECS_NORMAL";
+            case ECS_RECURSION_DEPTH_THRESHOLD_EXCEEDED: return "ECS_RECURSION_DEPTH_THRESHOLD_EXCEEDED";
+            case ECS_OPTIMISTIC_SIZE_THRESHOLD_EXCEEDED: return "ECS_OPTIMISTIC_SIZE_THRESHOLD_EXCEEDED";
+            case ECS_VISITED_COUNT_THRESHOLD_EXCEEDED: return "ECS_VISITED_COUNT_THRESHOLD_EXCEEDED";
+            case ECS_REAL_SIZE_THRESHOLD_EXCEEDED: return "ECS_REAL_SIZE_THRESHOLD_EXCEEDED";
+            case ECS_ARGUMENTS_INCOMPATIBLE: return "ECS_ARGUMENTS_INCOMPATIBLE";
+            case ECS_CALLSITES_CREATION_FAILED: return "ECS_CALLSITES_CREATION_FAILED";
+            default: return "ECS_UNKNOWN";
+         }
+   }
+
 bool
 TR_EstimateCodeSize::isInlineable(TR_CallStack * prevCallStack, TR_CallSite *callsite)
    {

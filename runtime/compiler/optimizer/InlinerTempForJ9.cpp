@@ -3537,7 +3537,7 @@ void TR_MultipleCallTargetInliner::weighCallSite( TR_CallStack * callStack , TR_
          comp()->setVisitCount(origVisitCount);
 
 
-         debugTrace(tracer()," Original ecs size = %d, _maxRecursiveCallByteCodeSizeEstimate = %d ecs _realSize = %d optimisticSize = %d inlineit = %d error = %d ecs.sizeThreshold = %d",
+         debugTrace(tracer()," Original ecs size = %d, _maxRecursiveCallByteCodeSizeEstimate = %d ecs _realSize = %d optimisticSize = %d inlineit = %d error = %s ecs.sizeThreshold = %d",
                               size,_maxRecursiveCallByteCodeSizeEstimate,ecs->getSize(),ecs->getOptimisticSize(),inlineit,ecs->getError(),ecs->getSizeThreshold());
 
          size = ecs->getSize();
