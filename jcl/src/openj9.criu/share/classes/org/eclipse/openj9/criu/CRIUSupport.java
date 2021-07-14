@@ -101,9 +101,13 @@ public final class CRIUSupport {
 	
 	private static native boolean isCheckpointAllowed();
 
-	private static native CRIUResult checkpointJVMImpl(String checkPointDir, boolean keepRunning, boolean shellJob, boolean extUnixSupport, int logLevel, String logFile);
+	private native CRIUResult checkpointJVMImpl();
 
 	private CRIUSupport() {}
+
+	public static CRIUSupport newCRIUSupport() {
+		return new CRIUSupport();
+	}
 
 	/**
 	 * Queries if CRIU support is enabled.
@@ -112,6 +116,38 @@ public final class CRIUSupport {
 	 */
 	public static boolean isCRIUSupportEnabled() {
 		return criuSupportEnabled;
+	}
+
+	private String checkPointDir;
+	private boolean keepRunning = false;
+	private boolean shellJob = true;
+	private boolean extUnixSupport = true;
+	private int logLevel = 4;
+	private String logFile = "checkpoint.log";
+
+	public CRIUSupport setCheckPointDir(String checkPointDir) {
+		this.checkPointDir = checkPointDir;
+		return this;
+	}
+	public CRIUSupport setKeepRunning(boolean keepRunning) {
+		this.keepRunning = keepRunning;
+		return this;
+	}
+	public CRIUSupport setShellJob(boolean shellJob) {
+		this.shellJob = shellJob;
+		return this;
+	}
+	public CRIUSupport setExtUnixSupport(boolean extUnixSupport) {
+		this.extUnixSupport = extUnixSupport;
+		return this;
+	}
+	public CRIUSupport setLogLevel(int logLevel) {
+		this.logLevel = logLevel;
+		return this;
+	}
+	public CRIUSupport setLogFile(String logFile) {
+		this.logFile = logFile;
+		return this;
 	}
 
 	/**
@@ -126,7 +162,7 @@ public final class CRIUSupport {
 	 * 
 	 * @return return CRIUResult
 	 */
-	public static CRIUResult checkPointJVM(Path checkPointDir) {
+	public CRIUResult checkPointJVM(Path checkPointDir) {
 		CRIUResult ret = new CRIUResult(CRIUResultType.UNSUPPORTED_OPERATION, null);
 
 		if (null == checkPointDir) {
@@ -148,7 +184,8 @@ public final class CRIUSupport {
 				}
 				
 				if (securityCheckPassed) {
-					ret = checkpointJVMImpl(cpDataDir, false, true, true, 4, "checkpoint.log"); //$NON-NLS-1$
+					setCheckPointDir(cpDataDir);
+					ret = checkpointJVMImpl(); //$NON-NLS-1$
 				}
 			}
 		}
