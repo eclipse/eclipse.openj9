@@ -101,7 +101,7 @@ public final class CRIUSupport {
 	
 	private static native boolean isCheckpointAllowed();
 
-	private static native CRIUResult checkpointJVMImpl();
+	private native CRIUResult checkpointJVMImpl();
 
 	private CRIUSupport() {}
 
@@ -119,11 +119,11 @@ public final class CRIUSupport {
 	}
 
 	private String checkPointDir;
-	private boolean keepRunning;
-	private boolean shellJob;
-	private boolean extUnixSupport;
-	private int logLevel;
-	private String logFile;
+	private boolean keepRunning = false;
+	private boolean shellJob = true;
+	private boolean extUnixSupport = true;
+	private int logLevel = 4;
+	private String logFile = "checkpoint.log";
 
 	public CRIUSupport setCheckPointDir(String checkPointDir) {
 		this.checkPointDir = checkPointDir;
@@ -185,11 +185,6 @@ public final class CRIUSupport {
 				
 				if (securityCheckPassed) {
 					setCheckPointDir(cpDataDir);
-					setKeepRunning(false);
-					setShellJob(true);
-					setExtUnixSupport(true);
-					setLogLevel(4);
-					setLogFile("checkpoint.log");
 					ret = checkpointJVMImpl(); //$NON-NLS-1$
 				}
 			}
