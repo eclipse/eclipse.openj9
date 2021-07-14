@@ -135,11 +135,33 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 	{
 		if (mixedReferenceMode) {
 			if (compressObjectReferences) {
-				return J9IndexableObjectDiscontiguousCompressed.SIZEOF;
+				return J9IndexableObjectDiscontiguousCompressed.d.SIZEOF;
 			}
 			return J9IndexableObjectDiscontiguousFull.SIZEOF;
 		}
 		return J9IndexableObjectDiscontiguous.SIZEOF;
+	}
+
+	public static VoidPointer getDataAddrForContiguous(J9IndexableObjectPointer objPointer)
+	{
+		if (mixedReferenceMode) {
+			if (compressObjectReferences) {
+				return VoidPointer.cast((J9IndexableObjectContiguousCompressed)objPointer.dataAddr);
+			}
+			return VoidPointer.cast((J9IndexableObjectContiguousFull)objPointer.dataAddr);
+		}
+		return VoidPointer.cast((J9IndexableObjectContiguous)objPointer.dataAddr);
+	}
+
+	public static VoidPointer getDataAddrForDiscontiguous(J9IndexableObjectPointer objPointer)
+	{
+		if (mixedReferenceMode) {
+			if (compressObjectReferences) {
+				return VoidPointer.cast((J9IndexableObjectDiscontiguousCompressed)objPointer.dataAddr);
+			}
+			return VoidPointer.cast((J9IndexableObjectDiscontiguousFull)objPointer.dataAddr);
+		}
+		return VoidPointer.cast((J9IndexableObjectDiscontiguous)objPointer.dataAddr);
 	}
 
 	/**
