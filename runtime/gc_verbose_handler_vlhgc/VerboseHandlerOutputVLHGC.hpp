@@ -103,6 +103,8 @@ protected:
 	 * The actual body (excluding first and last line) of memory-info stanza.
 	 */
 	virtual void outputMemoryInfoInnerStanza(MM_EnvironmentBase *env, UDATA indent, MM_CollectionStatistics *stats);
+
+	virtual const char *getSubSpaceType(uintptr_t typeFlags);
 	
 	/* Print out allocations statistics
 	 * @param current Env

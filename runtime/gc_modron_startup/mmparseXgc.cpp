@@ -162,6 +162,14 @@ j9gc_initialize_parse_gc_colon(J9JavaVM *javaVM, char **scan_start)
 		goto _exit;
 	}
 
+	if (try_scan(scan_start, "overrideHiresTimerCheck")) {
+		extensions->overrideHiresTimerCheck = true;
+		goto _exit;
+	}
+
+#endif /* J9VM_GC_REALTIME */
+
+#if defined(J9VM_GC_REALTIME)|| defined(J9VM_GC_VLHGC)
 	if (try_scan(scan_start, "targetPausetime=")) {
 		/* the unit of target pause time option is in milliseconds */
 		UDATA beatMilli = 0;
@@ -172,18 +180,20 @@ j9gc_initialize_parse_gc_colon(J9JavaVM *javaVM, char **scan_start)
 			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_VALUE_MUST_BE_ABOVE, "targetPausetime=", (UDATA)0);
 			goto _error;
 		}
-		/* convert the unit to microseconds and store in extensions */
-		extensions->beatMicro = beatMilli * 1000;
 
-		goto _exit;
-	}
-
-	if (try_scan(scan_start, "overrideHiresTimerCheck")) {
-		extensions->overrideHiresTimerCheck = true;
-		goto _exit;
-	}
-
+#if defined(J9VM_GC_REALTIME)
+			/* convert the unit to microseconds and store in extensions */
+			extensions->beatMicro = beatMilli * 1000;
 #endif /* J9VM_GC_REALTIME */
+		
+#if defined(J9VM_GC_VLHGC)
+		    /* Save soft pause target for balanced */
+			extensions->tarokTargetMaxPauseTime = beatMilli;
+#endif /* J9VM_GC_VLHGC */
+
+		goto _exit;
+	}
+#endif /* J9VM_GC_REALTIME || J9VM_GC_VLHGC */
 
 //todo temporary option to allow LOA to be enabled for testing with non-default gc policies
 //Remove once LOA code stable 
@@ -666,7 +676,8 @@ j9gc_initialize_parse_gc_colon(J9JavaVM *javaVM, char **scan_start)
 			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_INTEGER_OUT_OF_RANGE, "dnssExpectedTimeRatioMinimum=", (UDATA)0, (UDATA)100);
 			goto _error;
 		}
-		extensions->dnssExpectedTimeRatioMinimum = ((double)value) / ((double)100);
+		extensions->dnssExpectedTimeRatioMinimum._wasSpecified = true;
+		extensions->dnssExpectedTimeRatioMinimum._valueSpecified = ((double)value) / ((double)100);
 		goto _exit;
 	}
 
@@ -679,7 +690,8 @@ j9gc_initialize_parse_gc_colon(J9JavaVM *javaVM, char **scan_start)
 			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_INTEGER_OUT_OF_RANGE, "dnssExpectedTimeRatioMaximum=", (UDATA)0, (UDATA)100);
 			goto _error;
 		}
-		extensions->dnssExpectedTimeRatioMaximum = ((double)value) / ((double)100);
+		extensions->dnssExpectedTimeRatioMaximum._wasSpecified = true;
+		extensions->dnssExpectedTimeRatioMaximum._valueSpecified = ((double)value) / ((double)100);
 		goto _exit;
 	}
 

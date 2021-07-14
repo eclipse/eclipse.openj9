@@ -156,8 +156,6 @@ public:
 	UDATA deadClassLoaderCacheSize;
 #endif /*defined(J9VM_GC_DYNAMIC_CLASS_UNLOADING) */
 
-
-
 	MM_UnfinalizedObjectList* unfinalizedObjectLists; /**< The global linked list of unfinalized object lists. */
 	
 	UDATA objectListFragmentCount; /**< the size of Local Object Buffer(per gc thread), used by referenceObjectBuffer, UnfinalizedObjectBuffer and OwnableSynchronizerObjectBuffer */

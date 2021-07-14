@@ -157,6 +157,15 @@ MM_ParallelGlobalMarkTask::setup(MM_EnvironmentBase *envBase)
 	}
 	env->_markVLHGCStats.clear();
 	env->_workPacketStats.clear();
+
+	/* 
+	 * Get gc threads cpu time for when mark started, and add it to the stats structure.
+	 * If the current platform does not support this operation, there are failsafes in place - no need for an else condition here
+	 */
+	int64_t gcThreadCpuTime = omrthread_get_cpu_time(env->getOmrVMThread()->_os_thread);
+	if (-1 != gcThreadCpuTime) {
+		env->_markVLHGCStats._concurrentGCThreadsStartTimeSum += gcThreadCpuTime;
+	} 
 	
 	/* record that this thread is participating in this cycle */
 	env->_markVLHGCStats._gcCount = MM_GCExtensions::getExtensions(env)->globalVLHGCStats.gcCount;
@@ -168,9 +177,19 @@ MM_ParallelGlobalMarkTask::cleanup(MM_EnvironmentBase *envBase)
 {
 	MM_EnvironmentVLHGC *env = MM_EnvironmentVLHGC::getEnvironment(envBase);
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
-	
+
+	/* 
+	 * Get gc threads cpu time for when mark finished, and add it to the stats structure 
+	 * If the current platform does not support this operation, there are failsafes in place - no need for an else condition here
+	 */
+	int64_t gcThreadCpuTime = omrthread_get_cpu_time(env->getOmrVMThread()->_os_thread);
+	if (-1 != gcThreadCpuTime) {
+		env->_markVLHGCStats._concurrentGCThreadsEndTimeSum += gcThreadCpuTime;
+	} 
+
 	static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._markStats.merge(&env->_markVLHGCStats);
 	static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._workPacketStats.merge(&env->_workPacketStats);
+	
 	if(!env->isMainThread()) {
 		env->_cycleState = NULL;
 	}

@@ -885,7 +885,9 @@ MM_ReclaimDelegate::reportSweepEnd(MM_EnvironmentBase *env)
 {
 	J9VMThread *vmThread = (J9VMThread *)env->getLanguageVMThread();
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
-	Trc_MM_SweepEnd(vmThread);
+	MM_SweepVLHGCStats sweepStats = static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._sweepStats;
+
+	Trc_MM_SweepEndBalancedGC(vmThread, j9time_hires_delta(sweepStats._startTime, sweepStats._endTime, J9PORT_TIME_DELTA_IN_MICROSECONDS));
 
 	TRIGGER_J9HOOK_MM_PRIVATE_SWEEP_END(
 		MM_GCExtensions::getExtensions(env)->privateHookInterface,

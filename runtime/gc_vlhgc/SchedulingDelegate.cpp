@@ -57,9 +57,20 @@
  */
 const double measureScanRateHistoricWeightForGMP = 0.50;
 const double measureScanRateHistoricWeightForPGC = 0.95;
-const double partialGCTimeHistoricWeight = 0.80;
+const double partialGCTimeHistoricWeight = 0.50;
 const double incrementalScanTimePerGMPHistoricWeight = 0.50;
 const double bytesScannedConcurrentlyPerGMPHistoricWeight = 0.50;
+const double concurrentGMPWorkWeight = 0.5;
+const double pgcCpuOverheadWeight = 0.5;
+const double pgcIntervalHistoricWeight = 0.5;
+const double pgcOverheadHistoricWeight = 0.5;
+const double gcOverheadImprovementHighPassFilter = 0.975;
+const double edenChangePctHeapNotFullyExpanded = 0.05;
+const uintptr_t minimumEdenRegionChangeHeapNotFullyExpanded = 2;
+const uintptr_t maximumEdenRegionChangeHeapNotFullyExpanded = 10;
+const uintptr_t minimumPgcTime = 5;
+const uintptr_t minimumEdenRegionsToConsiderSurvivorRegions = 16;
+const uintptr_t consecutivePGCToChangeEden = 16;
 
 MM_SchedulingDelegate::MM_SchedulingDelegate (MM_EnvironmentVLHGC *env, MM_HeapRegionManager *manager)
 	: MM_BaseNonVirtual()
@@ -70,6 +81,7 @@ MM_SchedulingDelegate::MM_SchedulingDelegate (MM_EnvironmentVLHGC *env, MM_HeapR
 	, _nextIncrementWillDoPartialGarbageCollection(false)
 	, _nextIncrementWillDoGlobalMarkPhase(false)
 	, _nextPGCShouldCopyForward(_extensions->tarokPGCShouldCopyForward)
+	, _currentlyPerformingGMP(false)
 	, _globalSweepRequired(false)
 	, _disableCopyForwardDuringCurrentGlobalMarkPhase(false)
 	, _idealEdenRegionCount(0)
@@ -77,6 +89,7 @@ MM_SchedulingDelegate::MM_SchedulingDelegate (MM_EnvironmentVLHGC *env, MM_HeapR
 	, _edenRegionCount(0)
 	, _edenSurvivalRateCopyForward(1.0)
 	, _nonEdenSurvivalCountCopyForward(0)
+	, _numberOfHeapRegions(0)
 	, _previousReclaimableRegions(0)
 	, _previousDefragmentReclaimableRegions(0)
 	, _regionConsumptionRate(0.0)
@@ -97,17 +110,56 @@ MM_SchedulingDelegate::MM_SchedulingDelegate (MM_EnvironmentVLHGC *env, MM_HeapR
 	, _scannableBytesRatio(1.0)
 	, _historicTotalIncrementalScanTimePerGMP(0)
 	, _historicBytesScannedConcurrentlyPerGMP(0)
+	, _estimatedFreeTenure(0)
+	, _maxEdenRegionCount(1)
+	, _minEdenRegionCount(1)
 	, _partialGcStartTime(0)
+	, _partialGcOverhead(0.00)
 	, _historicalPartialGCTime(0)
+	, _recentPartialGCTime(0)
+	, _globalMarkIncrementsTotalTime(0)
+	, _globalMarkIntervalStartTime(0)
+	, _globalMarkOverhead(0.0)
+	, _globalSweepTimeUs(0)
+	, _concurrentMarkGCThreadsTotalWorkTime(0)
 	, _dynamicGlobalMarkIncrementTimeMillis(50)
+	, _pgcTimeIncreasePerEdenFactor(1.0001)
+	, _edenSizeFactor(0)
+	, _pgcCountSinceGMPEnd(0)
+	, _averagePgcInterval(0)
+	, _totalGMPWorkTimeUs(0)
 	, _scanRateStats()
 {
 	_typeId = __FUNCTION__;
 }
 
+bool
+MM_SchedulingDelegate::initialize(MM_EnvironmentVLHGC *env)
+{
+	uintptr_t maxHeapSize = _extensions->memoryMax;
 
+	double minEdenPercent = 0.00;
+	double maxEdenPercent = 0.75;
 
-UDATA
+	if (_extensions->userSpecifiedParameters._Xmn._wasSpecified || _extensions->userSpecifiedParameters._Xmns._wasSpecified) {
+		minEdenPercent = (double)_extensions->tarokIdealEdenMinimumBytes / maxHeapSize;
+	}
+
+	if (_extensions->userSpecifiedParameters._Xmn._wasSpecified || _extensions->userSpecifiedParameters._Xmnx._wasSpecified) {
+		maxEdenPercent = (double)_extensions->tarokIdealEdenMaximumBytes / maxHeapSize;
+	}
+
+	_minEdenRegionCount = (uintptr_t)(maxHeapSize * minEdenPercent) / _regionManager->getRegionSize();
+	_minEdenRegionCount = OMR_MAX(1, (uintptr_t)_minEdenRegionCount);
+
+	_maxEdenRegionCount = (uintptr_t)(maxHeapSize * maxEdenPercent) / _regionManager->getRegionSize();
+
+	_partialGcOverhead = _extensions->dnssExpectedTimeRatioMaximum._valueSpecified;
+
+	return true;
+}
+
+uintptr_t
 MM_SchedulingDelegate::getInitialTaxationThreshold(MM_EnvironmentVLHGC *env)
 {
 	/* reset all stored state and call getNextTaxationThreshold() */
@@ -121,6 +173,55 @@ MM_SchedulingDelegate::getInitialTaxationThreshold(MM_EnvironmentVLHGC *env)
 	_averageSurvivorSetRegionCount = 0.3 * (double)getCurrentEdenSizeInBytes(env) / _regionManager->getRegionSize();
 
 	return getNextTaxationThreshold(env);
+}
+
+void 
+MM_SchedulingDelegate::globalMarkCycleStart(MM_EnvironmentVLHGC *env){
+	calculateGlobalMarkOverhead(env);
+
+	_currentlyPerformingGMP = true;
+	/* Reset the total time taken for each increment of global mark phase, along with the time for concurrent mark GC work*/
+	_globalMarkIncrementsTotalTime = 0;
+	_concurrentMarkGCThreadsTotalWorkTime = 0;
+}
+
+void 
+MM_SchedulingDelegate::calculateGlobalMarkOverhead(MM_EnvironmentVLHGC *env) {
+	/* Calculate statistics regarding GMP overhead */
+	PORT_ACCESS_FROM_ENVIRONMENT(env);
+
+	/* Determine how long it has been since previous global mark cycle started */
+	uint64_t globalMarkIntervalEndTime = j9time_hires_clock();
+	uint64_t globalMarkIntervalTime = j9time_hires_delta(_globalMarkIntervalStartTime, globalMarkIntervalEndTime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
+
+	/* Determine the cost we attribute to concurrent GMP work from previous cycle. Since mutator threads might have been idle, reduce weight of concurrent GMP work by a factor of gmpConcurrentCostWeight */
+	uint64_t concurrentCostUs = (_concurrentMarkGCThreadsTotalWorkTime / 1000) * concurrentGMPWorkWeight;
+
+	/* Total GMP work time, is time taken for all increments + the time we attribute for concurrent GC parts of GMP, and global sweep time. */
+	uint64_t potentialGMPWorkTime =  _globalMarkIncrementsTotalTime + _globalSweepTimeUs + concurrentCostUs;
+	double potentialOverhead = (double)potentialGMPWorkTime/globalMarkIntervalTime;
+
+	if ((0.0 < potentialOverhead) && (1.0 > potentialOverhead) && (0 != _globalMarkIntervalStartTime)) {
+		/* Make sure no clock error occured */
+		_totalGMPWorkTimeUs = potentialGMPWorkTime;
+	} else if (0 == _totalGMPWorkTimeUs) {
+		/* At the very beggining of a run, assume GMP time is 5x larger than avg pgc time.
+		 * This is a very rough approximation, but it gives us enough data to make decision about eden size
+		 */
+		_totalGMPWorkTimeUs = (_historicalPartialGCTime * 1000) * 5;
+	} 
+
+	_globalMarkOverhead = (double)_totalGMPWorkTimeUs/globalMarkIntervalTime;
+	
+	Trc_MM_SchedulingDelegate_calculateGlobalMarkOverhead(env->getLanguageVMThread(), _globalMarkOverhead, _globalMarkIncrementsTotalTime, concurrentCostUs, globalMarkIntervalTime / 1000);
+
+	/* Set start time of next GMP phase, as end of current one */
+	_globalMarkIntervalStartTime = globalMarkIntervalEndTime;
+
+}
+
+void MM_SchedulingDelegate::globalMarkCycleEnd(MM_EnvironmentVLHGC *env) {
+	_currentlyPerformingGMP = false;
 }
 
 void 
@@ -144,17 +245,24 @@ MM_SchedulingDelegate::globalMarkPhaseCompleted(MM_EnvironmentVLHGC *env)
 	_disableCopyForwardDuringCurrentGlobalMarkPhase = false;
 
 	updateGMPStats(env);
-
 }
 
 void 
 MM_SchedulingDelegate::globalMarkIncrementCompleted(MM_EnvironmentVLHGC *env)
 {
 	measureScanRate(env, measureScanRateHistoricWeightForGMP);
+	/* Time how long the last global mark increment took */
+	PORT_ACCESS_FROM_ENVIRONMENT(env);
+	uint64_t globalMarkIncrementStartTime = static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._markStats._startTime;
+	uint64_t globalMarkIncrementEndTime = static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._markStats._endTime;
+
+	uint64_t globalMarkIncrementElapsedTime = j9time_hires_delta(globalMarkIncrementStartTime, globalMarkIncrementEndTime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
+
+	_globalMarkIncrementsTotalTime += globalMarkIncrementElapsedTime;
 }
 
 void 
-MM_SchedulingDelegate::globalGarbageCollectCompleted(MM_EnvironmentVLHGC *env, UDATA reclaimableRegions, UDATA defragmentReclaimableRegions)
+MM_SchedulingDelegate::globalGarbageCollectCompleted(MM_EnvironmentVLHGC *env, uintptr_t reclaimableRegions, uintptr_t defragmentReclaimableRegions)
 {
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
 
@@ -183,12 +291,31 @@ MM_SchedulingDelegate::globalGarbageCollectCompleted(MM_EnvironmentVLHGC *env, U
 void
 MM_SchedulingDelegate::partialGarbageCollectStarted(MM_EnvironmentVLHGC *env)
 {
-	Assert_MM_true(0 == _partialGcStartTime);
-
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
+
+	/* Don't count the very first PGC */
+	if (0 != _partialGcStartTime) {
+		uint64_t recentPgcInterval = j9time_hires_delta(_partialGcStartTime, j9time_hires_clock(), J9PORT_TIME_DELTA_IN_MICROSECONDS);
+		_averagePgcInterval = (uintptr_t)(pgcIntervalHistoricWeight * _averagePgcInterval) + (uintptr_t)((1- pgcIntervalHistoricWeight) * recentPgcInterval);
+	}
 
 	/* Record the GC start time in order to track Partial GC times (and averages) over the course of the application lifetime */
 	_partialGcStartTime = j9time_hires_clock();
+	calculatePartialGarbageCollectOverhead(env);
+}
+
+void
+MM_SchedulingDelegate::calculatePartialGarbageCollectOverhead(MM_EnvironmentVLHGC *env) {
+
+	if ((0 == _averagePgcInterval) || (0 == _historicalPartialGCTime)) {
+		/* On the very first PGC, we can't calculate overhead */
+		return;
+	}
+	
+	double recentOverhead = (double)(_historicalPartialGCTime * 1000)/_averagePgcInterval;
+	_partialGcOverhead = MM_Math::weightedAverage(_partialGcOverhead, recentOverhead, pgcOverheadHistoricWeight);
+	
+	Trc_MM_SchedulingDelegate_calculatePartialGarbageCollectOverhead(env->getLanguageVMThread(), _partialGcOverhead, _averagePgcInterval/1000, _historicalPartialGCTime);
 }
 
 void
@@ -216,36 +343,45 @@ MM_SchedulingDelegate::determineNextPGCType(MM_EnvironmentVLHGC *env)
 }
 
 void
-MM_SchedulingDelegate::calculateGlobalMarkIncrementTimeMillis(MM_EnvironmentVLHGC *env, U_64 pgcTime)
+MM_SchedulingDelegate::calculateGlobalMarkIncrementTimeMillis(MM_EnvironmentVLHGC *env, uint64_t pgcTime)
 {
 	if(U_32_MAX < pgcTime) {
 		/* Time likely traveled backwards due to a clock adjustment - just ignore this round */
 	} else {
+
+		_recentPartialGCTime = pgcTime;
+
 		/* Prime or calculate the running weighted average for PGC times */
 		if (0 == _historicalPartialGCTime) {
 			_historicalPartialGCTime = pgcTime;
 		} else {
-			_historicalPartialGCTime = (U_64) ((_historicalPartialGCTime * partialGCTimeHistoricWeight) + (pgcTime * (1-partialGCTimeHistoricWeight)));
+			_historicalPartialGCTime = (uint64_t) ((_historicalPartialGCTime * partialGCTimeHistoricWeight) + (pgcTime * (1-partialGCTimeHistoricWeight)));
 		}
 
 		Assert_MM_true(U_32_MAX >= _historicalPartialGCTime);
 		/* we just take a fraction (1/3) of the recent average, so that we do not impede mutator utilization significantly */
 		/* (note that we need to assume a mark increment took at least 1 millisecond or else we will divide by zero in later calculations) */
-		_dynamicGlobalMarkIncrementTimeMillis = OMR_MAX((UDATA)(_historicalPartialGCTime / 3), 1);
+		_dynamicGlobalMarkIncrementTimeMillis = OMR_MAX((uintptr_t)(_historicalPartialGCTime / 3), 1);
 	}
 
 }
 
 void
-MM_SchedulingDelegate::partialGarbageCollectCompleted(MM_EnvironmentVLHGC *env, UDATA reclaimableRegions, UDATA defragmentReclaimableRegions)
+MM_SchedulingDelegate::resetPgcTimeStatistics(MM_EnvironmentVLHGC *env) 
+{
+	_pgcCountSinceGMPEnd = 0;
+}
+
+void
+MM_SchedulingDelegate::partialGarbageCollectCompleted(MM_EnvironmentVLHGC *env, uintptr_t reclaimableRegions, uintptr_t defragmentReclaimableRegions)
 {
 	Trc_MM_SchedulingDelegate_partialGarbageCollectCompleted_Entry(env->getLanguageVMThread(), reclaimableRegions, defragmentReclaimableRegions);
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
 	MM_CopyForwardStats *copyForwardStats = &static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._copyForwardStats;
-	
+	bool globalSweepHappened = _globalSweepRequired;
 	_globalSweepRequired = false;
 	/* copy out the Eden size of the previous interval (between the last PGC and this one) before we recalculate the next one */
-	UDATA edenCountBeforeCollect = getCurrentEdenSizeInRegions(env);
+	uintptr_t edenCountBeforeCollect = getCurrentEdenSizeInRegions(env);
 	
 	Trc_MM_SchedulingDelegate_partialGarbageCollectCompleted_stats(env->getLanguageVMThread(),
 			copyForwardStats->_edenEvacuateRegionCount,
@@ -255,11 +391,11 @@ MM_SchedulingDelegate::partialGarbageCollectCompleted(MM_EnvironmentVLHGC *env, 
 			edenCountBeforeCollect);
 
 	if (env->_cycleState->_shouldRunCopyForward) {
-		UDATA regionSize = _regionManager->getRegionSize();
+		uintptr_t regionSize = _regionManager->getRegionSize();
 		
 		/* count the number of survivor regions allocated specifically to support Eden survivors */
-		UDATA edenSurvivorCount = copyForwardStats->_edenSurvivorRegionCount;
-		UDATA nonEdenSurvivorCount = copyForwardStats->_nonEdenSurvivorRegionCount;
+		uintptr_t edenSurvivorCount = copyForwardStats->_edenSurvivorRegionCount;
+		uintptr_t nonEdenSurvivorCount = copyForwardStats->_nonEdenSurvivorRegionCount;
 		
 		/* estimate how many more regions we would have needed to avoid abort */
 		Assert_MM_true( (0 == copyForwardStats->_scanBytesEden) || copyForwardStats->_aborted || (0 != copyForwardStats->_nonEvacuateRegionCount));
@@ -281,18 +417,23 @@ MM_SchedulingDelegate::partialGarbageCollectCompleted(MM_EnvironmentVLHGC *env, 
 		/* measure scan rate in PGC, only if we did M/S/C collect */
 		measureScanRate(env, measureScanRateHistoricWeightForPGC);
 	}
-
 	measureConsumptionForPartialGC(env, reclaimableRegions, defragmentReclaimableRegions);
-	calculateAutomaticGMPIntermission(env);
-	calculateEdenSize(env);
-	estimateMacroDefragmentationWork(env);
-	
+
 	/* Calculate the time spent in the current Partial GC */
-	U_64 partialGcEndTime = j9time_hires_clock();
-	U_64 pgcTime = j9time_hires_delta(_partialGcStartTime, partialGcEndTime, J9PORT_TIME_DELTA_IN_MILLISECONDS);
-	/* Clear the start time to be clear that we've used it */
-	_partialGcStartTime = 0;
+	uint64_t partialGcEndTime = j9time_hires_clock();
+	uint64_t pgcTime = j9time_hires_delta(_partialGcStartTime, partialGcEndTime, J9PORT_TIME_DELTA_IN_MILLISECONDS);
+	
+	_pgcCountSinceGMPEnd += 1;
+
+	/* Check eden size based off of new PGC stats */
+	checkEdenSizeAfterPgc(env, globalSweepHappened);
+	calculateEdenSize(env);
+	/* Recalculate GMP intermission after (possibly) resizing eden */
+	calculateAutomaticGMPIntermission(env);
+	estimateMacroDefragmentationWork(env);
+
 	calculateGlobalMarkIncrementTimeMillis(env, pgcTime);
+	updatePgcTimePrediction(env);
 
 	TRIGGER_J9HOOK_MM_PRIVATE_VLHGC_GARBAGE_COLLECT_COMPLETED(
 		_extensions->privateHookInterface,
@@ -303,19 +444,19 @@ MM_SchedulingDelegate::partialGarbageCollectCompleted(MM_EnvironmentVLHGC *env, 
 	Trc_MM_SchedulingDelegate_partialGarbageCollectCompleted_Exit(env->getLanguageVMThread());
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::getNextTaxationThresholdInternal(MM_EnvironmentVLHGC *env)
 {
 	/* these must be in their initial invalid state (both false) when this is called */
 	Assert_MM_false(_nextIncrementWillDoPartialGarbageCollection);
 	Assert_MM_false(_nextIncrementWillDoGlobalMarkPhase);
 	 
-	UDATA threshold = (_edenRegionCount * _regionManager->getRegionSize());
-	UDATA nextTaxationIndex = _taxationIndex;
+	uintptr_t threshold = (_edenRegionCount * _regionManager->getRegionSize());
+	uintptr_t nextTaxationIndex = _taxationIndex;
 	
 	if(_extensions->tarokEnableIncrementalGMP) {
-		UDATA numerator = _extensions->tarokPGCtoGMPNumerator;
-		UDATA denominator = _extensions->tarokPGCtoGMPDenominator;
+		uintptr_t numerator = _extensions->tarokPGCtoGMPNumerator;
+		uintptr_t denominator = _extensions->tarokPGCtoGMPDenominator;
 		if (1 == numerator) {
 			/* the PGC:GMP ratio is 1:n. Therefore every (n+1)th taxation point is a PGC, and the remainder are GMPs.
 			 * e.g. --GMP--PGC--GMP--GMP--GMP--PGC--GMP--GMP--GMP--PGC--
@@ -360,7 +501,7 @@ MM_SchedulingDelegate::getNextTaxationThresholdInternal(MM_EnvironmentVLHGC *env
 	return threshold;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::getNextTaxationThreshold(MM_EnvironmentVLHGC *env)
 {
 	/* TODO: eventually this should be some adaptive number which the 
@@ -369,8 +510,8 @@ MM_SchedulingDelegate::getNextTaxationThreshold(MM_EnvironmentVLHGC *env)
 	
 	Trc_MM_SchedulingDelegate_getNextTaxationThreshold_Entry(env->getLanguageVMThread());
 	
-	UDATA nextTaxationIndex = _taxationIndex;
-	UDATA threshold = 0;
+	uintptr_t nextTaxationIndex = _taxationIndex;
+	uintptr_t threshold = 0;
 	
 	/* consume thresholds until we complete the GMP intermission or we encounter a PGC. */
 	/* TODO: this could be time consuming if the intermission were very large */
@@ -384,7 +525,7 @@ MM_SchedulingDelegate::getNextTaxationThreshold(MM_EnvironmentVLHGC *env)
 		}
 	} while (!_nextIncrementWillDoGlobalMarkPhase && !_nextIncrementWillDoPartialGarbageCollection);
 
-	UDATA regionSize = _regionManager->getRegionSize();
+	uintptr_t regionSize = _regionManager->getRegionSize();
 	threshold = OMR_MAX(regionSize, MM_Math::roundToFloor(regionSize, threshold));
 	
 	Trc_MM_SchedulingDelegate_getNextTaxationThreshold_Exit(env->getLanguageVMThread(),
@@ -412,8 +553,8 @@ void
 MM_SchedulingDelegate::measureScanRate(MM_EnvironmentVLHGC *env, double historicWeight)
 {
 	Trc_MM_SchedulingDelegate_measureScanRate_Entry(env->getLanguageVMThread(), env->_cycleState->_collectionType);
-	UDATA currentBytesScanned = 0;
-	U_64 scantime = 0;
+	uintptr_t currentBytesScanned = 0;
+	uint64_t scantime = 0;
 	if (env->_cycleState->_collectionType == MM_CycleState::CT_PARTIAL_GARBAGE_COLLECTION) {
 		/* mark/compact PGC has been replaced with CopyForwardHybrid collector, so retrieve scan stats from  */
 		MM_CopyForwardStats *copyforwardStats = &static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._copyForwardStats;
@@ -428,15 +569,15 @@ MM_SchedulingDelegate::measureScanRate(MM_EnvironmentVLHGC *env, double historic
 
 	if (0 != currentBytesScanned) {
 		PORT_ACCESS_FROM_ENVIRONMENT(env);
-		UDATA historicalBytesScanned = _scanRateStats.historicalBytesScanned;
-		U_64 historicalScanMicroseconds = _scanRateStats.historicalScanMicroseconds;
+		uintptr_t historicalBytesScanned = _scanRateStats.historicalBytesScanned;
+		uint64_t historicalScanMicroseconds = _scanRateStats.historicalScanMicroseconds;
 		/* NOTE: scan time is the total time all threads spent scanning */
-		U_64 currentScanMicroseconds = j9time_hires_delta(0, scantime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
+		uint64_t currentScanMicroseconds = j9time_hires_delta(0, scantime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
 
 		if (0 != historicalBytesScanned) {
 			/* Keep a historical count of bytes scanned and scan times and re-derive microsecondsperBytes every time we receive new data */
-			_scanRateStats.historicalBytesScanned = (UDATA) ((historicalBytesScanned * historicWeight) + (currentBytesScanned * (1.0 - historicWeight)));
-			_scanRateStats.historicalScanMicroseconds = (U_64) ((historicalScanMicroseconds * historicWeight) + (currentScanMicroseconds * (1.0 - historicWeight)));
+			_scanRateStats.historicalBytesScanned = (uintptr_t) ((historicalBytesScanned * historicWeight) + (currentBytesScanned * (1.0 - historicWeight)));
+			_scanRateStats.historicalScanMicroseconds = (uint64_t) ((historicalScanMicroseconds * historicWeight) + (currentScanMicroseconds * (1.0 - historicWeight)));
 		} else {
 			/* if we have no historic data, do not use averaging */
 			_scanRateStats.historicalBytesScanned = currentBytesScanned;
@@ -468,12 +609,12 @@ void
 MM_SchedulingDelegate::updateCurrentMacroDefragmentationWork(MM_EnvironmentVLHGC *env, MM_HeapRegionDescriptorVLHGC *region)
 {
 	MM_MemoryPool *memoryPool = region->getMemoryPool();
-	UDATA freeMemory = memoryPool->getFreeMemoryAndDarkMatterBytes();
-	UDATA liveData = _regionManager->getRegionSize() - freeMemory;
+	uintptr_t freeMemory = memoryPool->getFreeMemoryAndDarkMatterBytes();
+	uintptr_t liveData = _regionManager->getRegionSize() - freeMemory;
 
 	double bytesDiscardedPerByteCopied = (_averageCopyForwardBytesCopied > 0.0) ? (_averageCopyForwardBytesDiscarded / _averageCopyForwardBytesCopied) : 0.0;
-	UDATA estimatedFreeMemoryDiscarded = (UDATA)(liveData * bytesDiscardedPerByteCopied);
-	UDATA recoverableFreeMemory = MM_Math::saturatingSubtract(freeMemory, estimatedFreeMemoryDiscarded);
+	uintptr_t estimatedFreeMemoryDiscarded = (uintptr_t)(liveData * bytesDiscardedPerByteCopied);
+	uintptr_t recoverableFreeMemory = MM_Math::saturatingSubtract(freeMemory, estimatedFreeMemoryDiscarded);
 
 	/* take a min out of free memory and live data.
 	 * However, this is an overestimate, since the work will often be calculated twice (both as source and as destination).
@@ -524,7 +665,158 @@ MM_SchedulingDelegate::calculateEstimatedGlobalBytesToScan() const
 	return liveSetAdjustedForScannableBytesRatio;
 }
 
-UDATA
+intptr_t
+MM_SchedulingDelegate::calculateRecommendedEdenChangeForExpandedHeap(MM_EnvironmentVLHGC *env) 
+{
+
+	if (0 == _pgcCountSinceGMPEnd) {
+		/* No statistics have been collected - just return the current eden size */
+		return getCurrentEdenSizeInBytes(env);
+	}
+	
+	/* 
+	 * Several statistics have observed which are needed to predict best eden size. 
+	 * These statistics are used to predict what eden size will lead to the lowest overhead, where overhead, is a hybrid 
+	 * between % of time spent in gc, and pgc pause times. The goal is to minimize % of time spent in gc,
+	 * while staying below the specific gc pause time threshold
+	 */
+
+	uint64_t avgPgcTimeUs = _historicalPartialGCTime * 1000;
+	/* 
+	 * Since _averagePgcInterval measures from start of one PGC to the next, we subtract the avg PGC duration
+	 * to get the avg time between end and start of consecutive PGC's
+	 */
+	uint64_t avgPgcIntervalUs = _averagePgcInterval - avgPgcTimeUs;
+	uintptr_t currentIdealEdenSize = getIdealEdenSizeInBytes(env);
+	uintptr_t currentHeapSize = _regionManager->getRegionSize() * _numberOfHeapRegions;
+	
+	double freeTenureHeadroom = 0.75;
+	
+	/*  
+	 * _estimatedFreeTenure is free space outside of eden and survivor space, plus some additional headroom.
+	 *  We add additional headroom so that we don't ever exhaust that free space
+	 */
+	uintptr_t freeTenure = OMR_MAX((uintptr_t)(_estimatedFreeTenure * freeTenureHeadroom), 1);
+
+	if (0 == _totalGMPWorkTimeUs) {
+		/* We haven't seen a GMP yet, so _estimatedFreeTenure will still be 0, which is not accurate. Use another estimate for free tenure until a GMP happens*/
+		intptr_t freeTenureFromPGCInfo = (intptr_t)currentHeapSize - currentIdealEdenSize - _liveSetBytesAfterPartialCollect - (intptr_t)_averageSurvivorSetRegionCount;
+		freeTenure = freeTenureFromPGCInfo > 0 ? freeTenureFromPGCInfo : 1;
+	}
+
+	Assert_MM_true(freeTenure != 0);
+
+	/* Determine how far we can increase or decrease eden from where eden currently stands. */
+	intptr_t minEdenChange = (intptr_t)currentIdealEdenSize * -1; 
+	intptr_t maxEdenChange = (intptr_t)freeTenure;
+
+	/* How many samples we want to test between minEdenChange and maxEdenChange? */
+	uintptr_t numberOfSamples = 100;
+
+	/* 
+	 * Initially, we suggest the current eden size as the best size - until proven there is a better size.
+	 * The "better" size, will have a better blend of gc overhead (% of time gc is active relative to mutator), 
+	 * and more satisfactory pgc pause time (below target pgc pause is the goal).
+	 */
+	intptr_t recommendedEdenChange = 0;
+	double currentCpuEdenOverhead = predictCpuOverheadForEdenSize(env, currentIdealEdenSize, recommendedEdenChange, freeTenure, avgPgcIntervalUs);
+	double currentEdenHybridOverhead = calculateHybridEdenOverhead(env, (uintptr_t)_historicalPartialGCTime, currentCpuEdenOverhead, true);
+	double bestOverheadPrediction = currentEdenHybridOverhead;
+
+	Trc_MM_SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap(env->getLanguageVMThread(), currentEdenHybridOverhead, (uintptr_t)_historicalPartialGCTime, mapPgcPauseOverheadToPgcCPUOverhead(env, (uintptr_t)_historicalPartialGCTime, true));
+	
+	/* 
+	 * In order to prevent very minor fluctuations in eden size, which don't result in significant performance improvements, 
+	 * apply a high pass filter - so that only large enough improvements result in eden changing size
+	 */
+	double hybridOverheadRequiredToChangeEden = currentEdenHybridOverhead * gcOverheadImprovementHighPassFilter;
+
+	/* How large the hops (in bytes) between samples should be */
+	uintptr_t samplingGranularity = (uintptr_t)(maxEdenChange - minEdenChange) / numberOfSamples;
+
+	/* Try "numberOfSamples" tests on the hybrid overhead curve, to determine which eden change will have best hybrid overhead */
+	for (uintptr_t i = 0; i < numberOfSamples; i++) {
+		/* Start from the right side of the curve */
+		intptr_t edenChange = (intptr_t)maxEdenChange - (samplingGranularity * i);
+
+		/* Predict what the pgc pause time, and gc overhead will be, if eden changes by 'edenChange' bytes*/
+		double estimatedCpuOverhead = predictCpuOverheadForEdenSize(env, currentIdealEdenSize, edenChange, freeTenure, avgPgcIntervalUs);
+		double estimatedPGCAvgTime = predictPgcTime(env, currentIdealEdenSize, edenChange);
+		double estimatedHybridOverhead = calculateHybridEdenOverhead(env, (uintptr_t)estimatedPGCAvgTime / 1000, estimatedCpuOverhead, true);
+
+		if ((estimatedHybridOverhead < bestOverheadPrediction) && (estimatedHybridOverhead < hybridOverheadRequiredToChangeEden)) {
+			/* The hybrid between pgc pause time, and gc overhead (% time gc is active), is better than what was previously thought to be the best, save the eden size */
+			recommendedEdenChange = edenChange;
+			bestOverheadPrediction = estimatedHybridOverhead;
+		} 
+	}
+
+	Trc_MM_SchedulingDelegate_calculateRecommendedEdenChangeForExpandedHeap_Exit(env->getLanguageVMThread(), freeTenure, _totalGMPWorkTimeUs / 1000, avgPgcTimeUs, avgPgcIntervalUs, _edenSurvivalRateCopyForward, currentIdealEdenSize + recommendedEdenChange, bestOverheadPrediction);
+
+	return recommendedEdenChange;
+}
+
+double 
+MM_SchedulingDelegate::predictCpuOverheadForEdenSize(MM_EnvironmentVLHGC *env, uintptr_t currentEdenSize, intptr_t edenSizeChange, uintptr_t freeTenure, uint64_t pgcAvgIntervalTime)
+{
+	double predictedNumberOfCollections = predictNumberOfCollections(env, currentEdenSize, edenSizeChange, freeTenure);
+	double predictedIntervalTime = predictIntervalBetweenCollections(env, currentEdenSize, edenSizeChange, pgcAvgIntervalTime);
+	double predictedAvgPgcTime = predictPgcTime(env, currentEdenSize, edenSizeChange);
+	
+	uint64_t gmpTime = _totalGMPWorkTimeUs;
+	if (0 == gmpTime) {
+		/* GMP has not yet happened, so make a rough guess - but a relatively high guess, so that eden thinks GMP is very expensive relative to PGC */
+		gmpTime = 20 * (_historicalPartialGCTime * 1000);
+	}
+
+	double gcActiveTime = (double)gmpTime + (predictedAvgPgcTime * predictedNumberOfCollections);
+	double totalIntervalTime = (double)gmpTime + ((predictedAvgPgcTime + predictedIntervalTime) * predictedNumberOfCollections);
+
+	double estimatedOverhead = gcActiveTime / totalIntervalTime;
+	return estimatedOverhead;
+}
+
+double 
+MM_SchedulingDelegate::predictIntervalBetweenCollections(MM_EnvironmentVLHGC *env, uintptr_t currentEdenSize, intptr_t edenSizeChange, uint64_t pgcAvgIntervalTime)
+{	
+	/* The interval between PGC collections is proportional to eden size. Ex. If eden size doubles, we expect the interval between PGC collections to double as well */
+	double intervalChange = (double)(currentEdenSize + edenSizeChange)/currentEdenSize;
+	return (double)pgcAvgIntervalTime * intervalChange;
+}
+
+double 
+MM_SchedulingDelegate::predictNumberOfCollections(MM_EnvironmentVLHGC *env, uintptr_t currentEdenSize, intptr_t edenSizeChange, uintptr_t freeTenure)
+{
+	/* The number of PGC collections is proportional to how much free tenure will be left after we expand/contract eden */
+	double collectionCountChange = (double)(freeTenure - edenSizeChange)/freeTenure;
+	return (double)_extensions->globalVLHGCStats.getRepresentativePgcPerGmpCount() * collectionCountChange;
+}
+
+double
+MM_SchedulingDelegate::predictPgcTime(MM_EnvironmentVLHGC *env, uintptr_t currentEdenSize, intptr_t edenSizeChange) 
+{	
+	/* 
+	 * PGC avg time MAY be related to eden size. Certain applications/allocation patterns, will cause pgc time to increase as eden increases,
+	 * while certain different workloads may keep pgc time relatively constant even as eden size increases. 
+	 * Create a model to determine how pgc time will be afffected by eden size - keeping in mind that _pgcTimeIncreasePerEdenFactor can vary depending on the application
+	 */
+	double edenSizeGb = (double)currentEdenSize / 1000000000;
+	double edenChangeGb = (double)edenSizeChange/ 1000000000;
+	double edenChangeRatio = (edenChangeGb + edenSizeGb + 1.0) / (edenSizeGb + 1.0);
+
+	/* Use a math workaround for "log base _pgcTimeIncreasePerEdenFactor (edenChangeRatio) "*/
+	double pgcTimeChangeForEdenChange = log(edenChangeRatio) / log(_pgcTimeIncreasePerEdenFactor);
+	double predictedPgcTime = (double)_historicalPartialGCTime + pgcTimeChangeForEdenChange;
+
+	/* If the prediction returned a value less than minimumPgcTime, then there may have been a small rounding mistake */
+	predictedPgcTime = OMR_MAX(predictedPgcTime, (double)minimumPgcTime);
+
+	/* Convert from ms to us */
+	return predictedPgcTime * 1000;
+}
+
+
+uintptr_t
 MM_SchedulingDelegate::estimateGlobalMarkIncrements(MM_EnvironmentVLHGC *env, double liveSetAdjustedForScannableBytesRatio) const
 {
 	Trc_MM_SchedulingDelegate_estimateGlobalMarkIncrements_Entry(env->getLanguageVMThread());
@@ -532,28 +824,28 @@ MM_SchedulingDelegate::estimateGlobalMarkIncrements(MM_EnvironmentVLHGC *env, do
 	/* we can consider liveSetAdjustedForScannableBytesRatio to be the total bytes the GMP needs to scan */
 	Assert_MM_true(0 != _extensions->gcThreadCount);
 	double estimatedScanMillis = liveSetAdjustedForScannableBytesRatio * _scanRateStats.microSecondsPerByteScanned / _extensions->gcThreadCount / 1000.0;
-	UDATA currentMarkIncrementMillis = currentGlobalMarkIncrementTimeMillis(env);
+	uintptr_t currentMarkIncrementMillis = currentGlobalMarkIncrementTimeMillis(env);
 	Assert_MM_true(0 != currentMarkIncrementMillis);
 	double estimatedGMPIncrements = estimatedScanMillis / currentMarkIncrementMillis;
-	Trc_MM_SchedulingDelegate_estimateGlobalMarkIncrements_liveSetBytes(env->getLanguageVMThread(), _liveSetBytesAfterPartialCollect, (UDATA)0, (UDATA)liveSetAdjustedForScannableBytesRatio);
+	Trc_MM_SchedulingDelegate_estimateGlobalMarkIncrements_liveSetBytes(env->getLanguageVMThread(), _liveSetBytesAfterPartialCollect, (uintptr_t)0, (uintptr_t)liveSetAdjustedForScannableBytesRatio);
 	Trc_MM_SchedulingDelegate_estimateGlobalMarkIncrements_summary(env->getLanguageVMThread(), estimatedScanMillis, estimatedGMPIncrements);
 	
 	/* adding 1 increment for final GMP phase (most importantly clearable processing) */
-	UDATA result = (UDATA)ceil(estimatedGMPIncrements) + 1;
+	uintptr_t result = (uintptr_t)ceil(estimatedGMPIncrements) + 1;
 	Trc_MM_SchedulingDelegate_estimateGlobalMarkIncrements_Exit(env->getLanguageVMThread(), result);
 	return result;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::getBytesToScanInNextGMPIncrement(MM_EnvironmentVLHGC *env) const
 {
-	UDATA targetPauseTimeMillis = currentGlobalMarkIncrementTimeMillis(env);
+	uintptr_t targetPauseTimeMillis = currentGlobalMarkIncrementTimeMillis(env);
 	double calculatedWorkTargetDouble = (((double)targetPauseTimeMillis * 1000.0) / _scanRateStats.microSecondsPerByteScanned) * (double)_extensions->gcThreadCount;
 
 	/* minimum to UDATA_MAX in case we overflowed */
-	UDATA calculatedWorkTarget = (UDATA) OMR_MIN(calculatedWorkTargetDouble, (double)UDATA_MAX);
+	uintptr_t calculatedWorkTarget = (uintptr_t) OMR_MIN(calculatedWorkTargetDouble, (double)UDATA_MAX);
 
-	UDATA workTarget = OMR_MAX(calculatedWorkTarget, _extensions->tarokMinimumGMPWorkTargetBytes._valueSpecified);
+	uintptr_t workTarget = OMR_MAX(calculatedWorkTarget, _extensions->tarokMinimumGMPWorkTargetBytes._valueSpecified);
 
 	Trc_MM_SchedulingDelegate_getBytesToScanInNextGMPIncrement(env->getLanguageVMThread(), targetPauseTimeMillis, _scanRateStats.microSecondsPerByteScanned, _extensions->gcThreadCount, workTarget);
 
@@ -561,7 +853,7 @@ MM_SchedulingDelegate::getBytesToScanInNextGMPIncrement(MM_EnvironmentVLHGC *env
 }
 
 void 
-MM_SchedulingDelegate::measureConsumptionForPartialGC(MM_EnvironmentVLHGC *env, UDATA currentReclaimableRegions, UDATA currentDefragmentReclaimableRegions)
+MM_SchedulingDelegate::measureConsumptionForPartialGC(MM_EnvironmentVLHGC *env, uintptr_t currentReclaimableRegions, uintptr_t currentDefragmentReclaimableRegions)
 {
 	/* check to see if we have a valid previous data point */
 	if (0 == _previousReclaimableRegions) {
@@ -590,15 +882,15 @@ MM_SchedulingDelegate::measureConsumptionForPartialGC(MM_EnvironmentVLHGC *env, 
 	_previousDefragmentReclaimableRegions = currentDefragmentReclaimableRegions;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::estimatePartialGCsRemaining(MM_EnvironmentVLHGC *env) const
 {
 	Trc_MM_SchedulingDelegate_estimatePartialGCsRemaining_Entry(env->getLanguageVMThread(), _regionConsumptionRate, _previousDefragmentReclaimableRegions);
 
-	UDATA partialCollectsRemaining = UDATA_MAX;
+	uintptr_t partialCollectsRemaining = UDATA_MAX;
 	if (_regionConsumptionRate > 0.0) {
 		/* TODO: decide how to reconcile kick-off with dynamic Eden size */
-		UDATA edenRegions = _idealEdenRegionCount;
+		uintptr_t edenRegions = _idealEdenRegionCount;
 
 		/* TODO:  This kick-off logic needs to be adapted to work with a dynamic mix of copy-forward and compact PGC increments.  For now, use the cycle state flags since they at least will let us test both code paths here. */
 		if (env->_cycleState->_shouldRunCopyForward) {
@@ -609,7 +901,7 @@ MM_SchedulingDelegate::estimatePartialGCsRemaining(MM_EnvironmentVLHGC *env) con
 			if ((0 != _extensions->fvtest_forceCopyForwardHybridRatio) && (100 >= _extensions->fvtest_forceCopyForwardHybridRatio)) {
 				survivorRegions = survivorRegions * (100 - _extensions->fvtest_forceCopyForwardHybridRatio) / 100;
 			}
-			Trc_MM_SchedulingDelegate_estimatePartialGCsRemaining_survivorNeeds(env->getLanguageVMThread(), (UDATA)_averageSurvivorSetRegionCount, MM_GCExtensions::getExtensions(env)->tarokKickoffHeadroomInBytes, (UDATA)survivorRegions);
+			Trc_MM_SchedulingDelegate_estimatePartialGCsRemaining_survivorNeeds(env->getLanguageVMThread(), (uintptr_t)_averageSurvivorSetRegionCount, MM_GCExtensions::getExtensions(env)->tarokKickoffHeadroomInBytes, (uintptr_t)survivorRegions);
 
 			double freeRegions = (double)((MM_GlobalAllocationManagerTarok *)_extensions->globalAllocationManager)->getFreeRegionCount();
 
@@ -619,14 +911,14 @@ MM_SchedulingDelegate::estimatePartialGCsRemaining(MM_EnvironmentVLHGC *env) con
 
 			/* Copy PGC has compact selection goal work drive, so it optimistically relies on our projected compact work to indeed recover all reclaimable regions */
 			if ((freeRegions + recoverableRegions) > (edenRegions + survivorRegions)) {
-				partialCollectsRemaining = (UDATA)((freeRegions + recoverableRegions - edenRegions - survivorRegions) / _regionConsumptionRate);
+				partialCollectsRemaining = (uintptr_t)((freeRegions + recoverableRegions - edenRegions - survivorRegions) / _regionConsumptionRate);
 			} else {
 				partialCollectsRemaining = 0;
 			}
 		} else {
 			/* MarkSweepCompact PGC has compact selection driven by free region goal, so it counts on reclaimable regions */
 			if (_previousDefragmentReclaimableRegions > edenRegions) {
-				partialCollectsRemaining = (UDATA)((double)(_previousDefragmentReclaimableRegions - edenRegions) / _regionConsumptionRate);
+				partialCollectsRemaining = (uintptr_t)((double)(_previousDefragmentReclaimableRegions - edenRegions) / _regionConsumptionRate);
 			} else {
 				partialCollectsRemaining = 0;
 			}
@@ -659,8 +951,8 @@ MM_SchedulingDelegate::calculateHeapOccupancyTrend(MM_EnvironmentVLHGC *env)
 void
 MM_SchedulingDelegate::calculateScannableBytesRatio(MM_EnvironmentVLHGC *env)
 {
-	UDATA scannableBytes = 0;
-	UDATA nonScannableBytes = 0;
+	uintptr_t scannableBytes = 0;
+	uintptr_t nonScannableBytes = 0;
 
 	GC_HeapRegionIteratorVLHGC regionIterator(_regionManager);
 	MM_HeapRegionDescriptorVLHGC *region = NULL;
@@ -722,10 +1014,47 @@ MM_SchedulingDelegate::getDefragmentEmptinessThreshold(MM_EnvironmentVLHGC *env)
 
 }
 
-UDATA
-MM_SchedulingDelegate::estimateTotalFreeMemory(MM_EnvironmentVLHGC *env, UDATA freeRegionMemory, UDATA defragmentedMemory, UDATA reservedFreeMemory)
+void
+MM_SchedulingDelegate::updateHeapSizingData(MM_EnvironmentVLHGC *env) 
+{	
+	uintptr_t regionSize = _regionManager->getRegionSize();
+	uintptr_t totalHeapSize = regionSize * _numberOfHeapRegions;
+	/* Determine how much space needs to be reserved for eden + survivor space */
+	uintptr_t survivorSize = (uintptr_t)(regionSize * _averageSurvivorSetRegionCount);
+	/* In certain edge cases, eden + survivor might be calculated as larger than the heap size (which is not possible), and that causes innacuracies down the line */
+	uintptr_t reservedFreeMemory =  OMR_MIN((getCurrentEdenSizeInBytes(env) + survivorSize), totalHeapSize);
+
+	/* If a GMP has not yet occured, make a rough guess as to how expensive GMP will be */
+	_extensions->globalVLHGCStats._heapSizingData.gmpTime = _totalGMPWorkTimeUs == 0 ? _historicalPartialGCTime * 1000 : _totalGMPWorkTimeUs;
+	_extensions->globalVLHGCStats._heapSizingData.pgcCountSinceGMPEnd = _pgcCountSinceGMPEnd;
+	_extensions->globalVLHGCStats._heapSizingData.avgPgcTimeUs = _historicalPartialGCTime * 1000;
+
+	/* After the first PGC, _averagePgcInterval will still be 0, so make a very rough estimate as to how big the interval between PGC's will be */
+	_extensions->globalVLHGCStats._heapSizingData.avgPgcIntervalUs = _averagePgcInterval != 0 ? (_averagePgcInterval - (_historicalPartialGCTime * 1000)) : (_historicalPartialGCTime * 5);
+	_extensions->globalVLHGCStats._heapSizingData.reservedSize = reservedFreeMemory;
+
+	if (_extensions->globalVLHGCStats._heapSizingData.reservedSize + _liveSetBytesAfterPartialCollect < totalHeapSize) {
+		uintptr_t freeTenureEstimate = totalHeapSize - _extensions->globalVLHGCStats._heapSizingData.reservedSize - _liveSetBytesAfterPartialCollect;
+		uintptr_t freeTenureEstimateFromBeforePgc = _extensions->globalVLHGCStats._heapSizingData.freeTenure;
+
+		/* 
+		 * Until a GMP occurs, and _estimatedFreeTenure is set, use the most conservative estimate between the free tenure estimate recorded before a PGC, 
+		 * and a free tenure estimate made by looking at live data after PGC. Neither of these two methods is as precise _estimatedFreeTenure, 
+		 * but until GMP occurs, one of those two estimates must be used for purposes of heap resizing (Note: the minimum of the two values is used, so that heap more likely to expand)
+		 */
+		_extensions->globalVLHGCStats._heapSizingData.freeTenure = _estimatedFreeTenure != 0 ? _estimatedFreeTenure : OMR_MIN(freeTenureEstimateFromBeforePgc, freeTenureEstimate);
+	} else {
+		/* Certain edge cases (usually in startup) the total heap might be too small for eden + survivor, and the live set, so free tenure is effectively 0 */
+		_extensions->globalVLHGCStats._heapSizingData.freeTenure = 0;
+	}
+
+	/* NOTE: _extensions->globalVLHGCStats._heapSizingData.edenRegionChange is updated elsewhere, and should not be included here */
+}
+
+uintptr_t
+MM_SchedulingDelegate::estimateTotalFreeMemory(MM_EnvironmentVLHGC *env, uintptr_t freeRegionMemory, uintptr_t defragmentedMemory, uintptr_t reservedFreeMemory)
 {
-	UDATA estimatedFreeMemory = 0;
+	uintptr_t estimatedFreeMemory = 0;
 
 	/* Adjust estimatedFreeMemory - we are only interested in area that shortfall can be fed from.
 	 * Thus exclude reservedFreeMemory(Eden and Survivor size).
@@ -736,52 +1065,52 @@ MM_SchedulingDelegate::estimateTotalFreeMemory(MM_EnvironmentVLHGC *env, UDATA f
 	return estimatedFreeMemory;
 }
 
-UDATA
-MM_SchedulingDelegate::calculateKickoffHeadroom(MM_EnvironmentVLHGC *env, UDATA totalFreeMemory)
+uintptr_t
+MM_SchedulingDelegate::calculateKickoffHeadroom(MM_EnvironmentVLHGC *env, uintptr_t totalFreeMemory)
 {
 	if (_extensions->tarokForceKickoffHeadroomInBytes) {
 		return _extensions->tarokKickoffHeadroomInBytes;
 	}
-	UDATA newHeadroom = totalFreeMemory * _extensions->tarokKickoffHeadroomRegionRate / 100;
+	uintptr_t newHeadroom = totalFreeMemory * _extensions->tarokKickoffHeadroomRegionRate / 100;
 	Trc_MM_SchedulingDelegate_calculateKickoffHeadroom(env->getLanguageVMThread(), _extensions->tarokKickoffHeadroomInBytes, newHeadroom);
 	_extensions->tarokKickoffHeadroomInBytes = newHeadroom;
 	return newHeadroom;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::initializeKickoffHeadroom(MM_EnvironmentVLHGC *env)
 {
 	/* total free memory = total heap size - eden size */
-	UDATA totalFreeMemory = _regionManager->getTotalHeapSize() - getCurrentEdenSizeInBytes(env);
+	uintptr_t totalFreeMemory = _regionManager->getTotalHeapSize() - getCurrentEdenSizeInBytes(env);
 	return calculateKickoffHeadroom(env, totalFreeMemory);
 }
 
 void
-MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, UDATA edenSizeInBytes)
+MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, uintptr_t edenSizeInBytes)
 {
 	/* Ideally, copy-forwarded regions should be 100% full (i.e. 0% empty), but there are inefficiencies due to parallelism and compact groups.
 	 * We measure this so that we can detect regions which are unlikely to become less empty if we copy-and-forward them.
 	 */
 	const double defragmentEmptinessThreshold = getDefragmentEmptinessThreshold(env);
 	Assert_MM_true( (defragmentEmptinessThreshold >= 0.0) && (defragmentEmptinessThreshold <= 1.0) );
-	const UDATA regionSize = _regionManager->getRegionSize();
+	const uintptr_t regionSize = _regionManager->getRegionSize();
 
-	UDATA totalLiveDataInCollectableRegions = 0;
-	UDATA totalLiveDataInNonCollectibleRegions = 0;
-	UDATA fullyCompactedData = 0;
+	uintptr_t totalLiveDataInCollectableRegions = 0;
+	uintptr_t totalLiveDataInNonCollectibleRegions = 0;
+	uintptr_t fullyCompactedData = 0;
 
-	UDATA freeMemoryInCollectibleRegions = 0;
-	UDATA freeMemoryInNonCollectibleRegions = 0;
-	UDATA freeMemoryInFullyCompactedRegions = 0;
-	UDATA freeRegionMemory = 0;
+	uintptr_t freeMemoryInCollectibleRegions = 0;
+	uintptr_t freeMemoryInNonCollectibleRegions = 0;
+	uintptr_t freeMemoryInFullyCompactedRegions = 0;
+	uintptr_t freeRegionMemory = 0;
 
-	UDATA collectibleRegions = 0;
-	UDATA nonCollectibleRegions = 0;
-	UDATA freeRegions = 0;
-	UDATA fullyCompactedRegions = 0;
+	uintptr_t collectibleRegions = 0;
+	uintptr_t nonCollectibleRegions = 0;
+	uintptr_t freeRegions = 0;
+	uintptr_t fullyCompactedRegions = 0;
 
-	UDATA estimatedFreeMemory = 0;
-	UDATA defragmentedMemory = 0;
+	uintptr_t estimatedFreeMemory = 0;
+	uintptr_t defragmentedMemory = 0;
 
 	GC_HeapRegionIteratorVLHGC regionIterator(_regionManager, MM_HeapRegionDescriptor::MANAGED);
 	MM_HeapRegionDescriptorVLHGC *region = NULL;
@@ -790,7 +1119,7 @@ MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, UDAT
 		region->_defragmentationTarget = false;
 		if (region->containsObjects()) {
 			Assert_MM_true(region->_sweepData._alreadySwept);
-			UDATA freeMemory = region->getMemoryPool()->getFreeMemoryAndDarkMatterBytes();
+			uintptr_t freeMemory = region->getMemoryPool()->getFreeMemoryAndDarkMatterBytes();
 			if (!region->getRememberedSetCardList()->isAccurate()) {
 				/* Overflowed regions or those that RSCL is being rebuilt will not be compacted */
 				nonCollectibleRegions += 1;
@@ -805,13 +1134,13 @@ MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, UDAT
 					collectibleRegions += 1;
 					freeMemoryInCollectibleRegions += freeMemory;
 					/* see ReclaimDelegate::deriveCompactScore() for an explanation of potentialWastedWork */
-					UDATA compactGroup = MM_CompactGroupManager::getCompactGroupNumber(env, region);
+					uintptr_t compactGroup = MM_CompactGroupManager::getCompactGroupNumber(env, region);
 					double weightedSurvivalRate = MM_GCExtensions::getExtensions(env)->compactGroupPersistentStats[compactGroup]._weightedSurvivalRate;
 					double potentialWastedWork = (1.0 - weightedSurvivalRate) * (1.0 - emptiness);
 
 					/* the probability that we'll recover the free memory is determined by the potential gainful work, so use that determine how much memory we're likely to actually compact */
-					defragmentedMemory += (UDATA)((double)freeMemory * (1.0 - potentialWastedWork));
-					totalLiveDataInCollectableRegions += (UDATA)((double)(regionSize - freeMemory) * (1.0 - potentialWastedWork));
+					defragmentedMemory += (uintptr_t)((double)freeMemory * (1.0 - potentialWastedWork));
+					totalLiveDataInCollectableRegions += (uintptr_t)((double)(regionSize - freeMemory) * (1.0 - potentialWastedWork));
 					region->_defragmentationTarget = true;
 
 				} else {
@@ -830,14 +1159,16 @@ MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, UDAT
 	/* Survivor space needs to accommodate for Nursery set, Dynamic collection set and Compaction set
 	 */
 	/* estimate totalFreeMemory for recalculating kickoffHeadroomRegionCount */	 
-	UDATA surivivorSize = (UDATA)(regionSize * _averageSurvivorSetRegionCount);
-	UDATA reservedFreeMemory = edenSizeInBytes + surivivorSize;
+	uintptr_t surivivorSize = (uintptr_t)(regionSize * _averageSurvivorSetRegionCount);
+	uintptr_t reservedFreeMemory = edenSizeInBytes + surivivorSize;
 	estimatedFreeMemory = estimateTotalFreeMemory(env, freeRegionMemory, defragmentedMemory, reservedFreeMemory);
 	calculateKickoffHeadroom(env, estimatedFreeMemory);
 
 	/* estimate totalFreeMemory for recalculating PGCCompactionRate with tarokKickoffHeadroomInBytes */
 	reservedFreeMemory += _extensions->tarokKickoffHeadroomInBytes;
 	estimatedFreeMemory = estimateTotalFreeMemory(env, freeRegionMemory, defragmentedMemory, reservedFreeMemory);
+	/* Remeber the total free memory estimate, so it can be used to calculate how big eden should be */
+	_estimatedFreeTenure = estimatedFreeMemory;
 
 	double bytesDiscardedPerByteCopied = (_averageCopyForwardBytesCopied > 0.0) ? (_averageCopyForwardBytesDiscarded / _averageCopyForwardBytesCopied) : 0.0;
 	double estimatedFreeMemoryDiscarded = (double)totalLiveDataInCollectableRegions * bytesDiscardedPerByteCopied;
@@ -855,14 +1186,14 @@ MM_SchedulingDelegate::calculatePGCCompactionRate(MM_EnvironmentVLHGC *env, UDAT
 	Trc_MM_SchedulingDelegate_calculatePGCCompactionRate_liveToFreeRatio4(env->getLanguageVMThread(), _bytesCompactedToFreeBytesRatio, edenSizeInBytes, surivivorSize, reservedFreeMemory, defragmentEmptinessThreshold, defragmentedMemory, estimatedFreeMemory);
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::getDesiredCompactWork()
 {
 	/* compact work (mostly) driven by M/S from GMP */
-	UDATA desiredCompactWork = (UDATA)(_bytesCompactedToFreeBytesRatio * OMR_MAX(0.0, _regionConsumptionRate) * _regionManager->getRegionSize());
+	uintptr_t desiredCompactWork = (uintptr_t)(_bytesCompactedToFreeBytesRatio * OMR_MAX(0.0, _regionConsumptionRate) * _regionManager->getRegionSize());
 	
 	/* defragmentation work (mostly) driven by compact group merging (maxAge - 1 into maxAge) */
-	desiredCompactWork += (UDATA)_averageMacroDefragmentationWork;
+	desiredCompactWork += (uintptr_t)_averageMacroDefragmentationWork;
 
 	return desiredCompactWork;
 }
@@ -883,21 +1214,21 @@ void
 MM_SchedulingDelegate::copyForwardCompleted(MM_EnvironmentVLHGC *env)
 {
 	MM_CopyForwardStats * copyForwardStats = &(static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._copyForwardStats);
-	UDATA bytesCopied = copyForwardStats->_copyBytesTotal;
-	UDATA bytesDiscarded = copyForwardStats->_copyDiscardBytesTotal;
-	UDATA bytesScanned = copyForwardStats->_scanBytesTotal;
-	UDATA bytesCompacted = copyForwardStats->_externalCompactBytes;
-	UDATA regionSize = _regionManager->getRegionSize();
+	uintptr_t bytesCopied = copyForwardStats->_copyBytesTotal;
+	uintptr_t bytesDiscarded = copyForwardStats->_copyDiscardBytesTotal;
+	uintptr_t bytesScanned = copyForwardStats->_scanBytesTotal;
+	uintptr_t bytesCompacted = copyForwardStats->_externalCompactBytes;
+	uintptr_t regionSize = _regionManager->getRegionSize();
 	double copyForwardRate = calculateAverageCopyForwardRate(env);
 	
-	const double historicWeight = 0.70; /* arbitrarily give 70% weight to historical result, 30% to newest result */
+	const double historicWeight = 0.50; /* arbitrarily give 50% weight to historical result, 50% to newest result */
 	_averageCopyForwardBytesCopied = (_averageCopyForwardBytesCopied * historicWeight) + ((double)bytesCopied * (1.0 - historicWeight));
 	_averageCopyForwardBytesDiscarded = (_averageCopyForwardBytesDiscarded * historicWeight) + ((double)bytesDiscarded * (1.0 - historicWeight));
 
 	/* calculate the number of additional regions which would have been required to complete the copy-forward without aborting */
-	UDATA failedEvacuateRegionCount = (bytesScanned + regionSize - 1) / regionSize;
-	UDATA compactSetSurvivorRegionCount = (bytesCompacted + regionSize - 1) / regionSize;
-	UDATA survivorSetRegionCount = env->_cycleState->_pgcData._survivorSetRegionCount + failedEvacuateRegionCount + compactSetSurvivorRegionCount;
+	uintptr_t failedEvacuateRegionCount = (bytesScanned + regionSize - 1) / regionSize;
+	uintptr_t compactSetSurvivorRegionCount = (bytesCompacted + regionSize - 1) / regionSize;
+	uintptr_t survivorSetRegionCount = env->_cycleState->_pgcData._survivorSetRegionCount + failedEvacuateRegionCount + compactSetSurvivorRegionCount;
 	
 	_averageSurvivorSetRegionCount = (_averageSurvivorSetRegionCount * historicWeight) + ((double)survivorSetRegionCount * (1.0 - historicWeight));
 	_averageCopyForwardRate = (_averageCopyForwardRate * historicWeight) + (copyForwardRate * (1.0 - historicWeight));
@@ -924,9 +1255,9 @@ MM_SchedulingDelegate::calculateAverageCopyForwardRate(MM_EnvironmentVLHGC *env)
 {
 	PORT_ACCESS_FROM_ENVIRONMENT(env);
 	MM_CopyForwardStats * copyForwardStats = &(static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._copyForwardStats);
-	UDATA bytesCopied = copyForwardStats->_copyBytesTotal;
-	U_64 timeSpentReferenceClearing = static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._irrsStats._clearFromRegionReferencesTimesus;
-	U_64 timeSpentInCopyForward = j9time_hires_delta(copyForwardStats->_startTime, copyForwardStats->_endTime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
+	uintptr_t bytesCopied = copyForwardStats->_copyBytesTotal;
+	uint64_t timeSpentReferenceClearing = static_cast<MM_CycleStateVLHGC*>(env->_cycleState)->_vlhgcIncrementStats._irrsStats._clearFromRegionReferencesTimesus;
+	uint64_t timeSpentInCopyForward = j9time_hires_delta(copyForwardStats->_startTime, copyForwardStats->_endTime, J9PORT_TIME_DELTA_IN_MICROSECONDS);
 
 	double copyForwardRate = 0.0;
 	if (timeSpentInCopyForward > timeSpentReferenceClearing) {
@@ -951,7 +1282,7 @@ MM_SchedulingDelegate::calculateAutomaticGMPIntermission(MM_EnvironmentVLHGC *en
 	Trc_MM_SchedulingDelegate_calculateAutomaticGMPIntermission_Entry(env->getLanguageVMThread(), _extensions->tarokAutomaticGMPIntermission ? "true" : "false", _remainingGMPIntermissionIntervals);
 	
 	/* call these even if automatic intermissions aren't enabled, so that we get the trace data. This is useful for debugging */
-	UDATA partialCollectsRemaining = estimatePartialGCsRemaining(env);
+	uintptr_t partialCollectsRemaining = estimatePartialGCsRemaining(env);
 	updateLiveBytesAfterPartialCollect();
 	
 	if (_extensions->tarokAutomaticGMPIntermission) {
@@ -961,10 +1292,10 @@ MM_SchedulingDelegate::calculateAutomaticGMPIntermission(MM_EnvironmentVLHGC *en
 		/* if we haven't kicked off yet, recalculate the intermission until kick-off based on current estimates */
 		if (_remainingGMPIntermissionIntervals > 0) {
 			double liveSetAdjustedForScannableBytesRatio = calculateEstimatedGlobalBytesToScan();
-			UDATA incrementHeadroom = calculateGlobalMarkIncrementHeadroom(env);
-			UDATA globalMarkIncrementsRequired = estimateGlobalMarkIncrements(env, liveSetAdjustedForScannableBytesRatio);
-			UDATA globalMarkIncrementsRequiredWithHeadroom = globalMarkIncrementsRequired + incrementHeadroom;
-			UDATA globalMarkIncrementsRemaining = partialCollectsRemaining * _extensions->tarokPGCtoGMPDenominator / _extensions->tarokPGCtoGMPNumerator;
+			uintptr_t incrementHeadroom = calculateGlobalMarkIncrementHeadroom(env);
+			uintptr_t globalMarkIncrementsRequired = estimateGlobalMarkIncrements(env, liveSetAdjustedForScannableBytesRatio);
+			uintptr_t globalMarkIncrementsRequiredWithHeadroom = globalMarkIncrementsRequired + incrementHeadroom;
+			uintptr_t globalMarkIncrementsRemaining = partialCollectsRemaining * _extensions->tarokPGCtoGMPDenominator / _extensions->tarokPGCtoGMPNumerator;
 			_remainingGMPIntermissionIntervals = MM_Math::saturatingSubtract(globalMarkIncrementsRemaining, globalMarkIncrementsRequiredWithHeadroom);
 		}
 	}
@@ -973,65 +1304,312 @@ MM_SchedulingDelegate::calculateAutomaticGMPIntermission(MM_EnvironmentVLHGC *en
 }
 
 void
-MM_SchedulingDelegate::updateSurvivalRatesAfterCopyForward(double thisEdenSurvivalRate, UDATA thisNonEdenSurvivorCount)
+MM_SchedulingDelegate::updateSurvivalRatesAfterCopyForward(double thisEdenSurvivalRate, uintptr_t thisNonEdenSurvivorCount)
 {
 	/* Note that this weight value is currently arbitrary */
 	double historicalWeight = 0.5;
 	double newWeight = 1.0 - historicalWeight;
 	_edenSurvivalRateCopyForward =  (historicalWeight * _edenSurvivalRateCopyForward) + (newWeight * thisEdenSurvivalRate);
-	_nonEdenSurvivalCountCopyForward = (UDATA)((historicalWeight * _nonEdenSurvivalCountCopyForward) + (newWeight * thisNonEdenSurvivorCount));
+	_nonEdenSurvivalCountCopyForward = (uintptr_t)((historicalWeight * _nonEdenSurvivalCountCopyForward) + (newWeight * thisNonEdenSurvivorCount));
 }
 
 void 
 MM_SchedulingDelegate::calculateEdenSize(MM_EnvironmentVLHGC *env)
 {
-	UDATA regionSize = _regionManager->getRegionSize();
-	UDATA previousEdenSize = _edenRegionCount * regionSize;
+	uintptr_t regionSize = _regionManager->getRegionSize();
+	uintptr_t previousEdenSize = _edenRegionCount * regionSize;
 	Trc_MM_SchedulingDelegate_calculateEdenSize_Entry(env->getLanguageVMThread(), previousEdenSize);
 	
 	MM_GlobalAllocationManagerTarok *globalAllocationManager = (MM_GlobalAllocationManagerTarok *)_extensions->globalAllocationManager;
-	UDATA freeRegions = globalAllocationManager->getFreeRegionCount();
+	uintptr_t freeRegions = globalAllocationManager->getFreeRegionCount();
+	
+	/* Eden sizing logic may have suggested a change to eden size. Apply those changes, while still respecting -Xmns/-Xmnx */
+	adjustIdealEdenRegionCount(env);
 
-	UDATA edenMinimumCount = _minimumEdenRegionCount;
-	UDATA edenMaximumCount = _idealEdenRegionCount;
+	uintptr_t edenMinimumCount = _minimumEdenRegionCount;
+	uintptr_t edenMaximumCount = _idealEdenRegionCount;
+
 	Assert_MM_true(edenMinimumCount >= 1);
 	Assert_MM_true(edenMaximumCount >= 1);
 	Assert_MM_true(edenMaximumCount >= edenMinimumCount);
-	
-	UDATA desiredEdenCount = freeRegions;
-	if (desiredEdenCount > edenMaximumCount) {
-		desiredEdenCount = edenMaximumCount;
-	} else if (desiredEdenCount < edenMinimumCount) {
-		desiredEdenCount = edenMinimumCount;
-	}
+
+	/* Allow eden to expand as much as it wants, as long as the total heap can expand to accomodate it */
+	uintptr_t desiredEdenCount = OMR_MAX(edenMaximumCount, edenMinimumCount);
+	intptr_t desiredEdenChangeSize = (intptr_t)desiredEdenCount - (intptr_t)_edenRegionCount;
+	/* Determine if eden should try to grow anyways, or if the heap is tight on memory */
+	uintptr_t maximumHeap = _extensions->softMx == 0 ? _extensions->memoryMax : _extensions->softMx;
+	uintptr_t maximumHeapRegions = maximumHeap / _regionManager->getRegionSize();
+	intptr_t maxHeapExpansionRegions = OMR_MAX(0, ((intptr_t)maximumHeapRegions - (intptr_t)_numberOfHeapRegions - 1));
+
 	Trc_MM_SchedulingDelegate_calculateEdenSize_dynamic(env->getLanguageVMThread(), desiredEdenCount, _edenSurvivalRateCopyForward, _nonEdenSurvivalCountCopyForward, freeRegions, edenMinimumCount, edenMaximumCount);
-	if (desiredEdenCount <= freeRegions) {
-		_edenRegionCount = desiredEdenCount;
+
+	/* Make sure that the total heap can expand enough to satisfy the desired change in eden size
+	 * If heap is fully expanded (or close to) make sure that there are enough free regions to satisfy given eden size change 
+	 */
+	intptr_t maxEdenChange = 0;
+
+	if (0 == maxHeapExpansionRegions) {
+		/* 
+		 * The heap is fully expanded. Eden will be stealing free regions from the entire heap, without telling the heap to grow. 
+		 * Note: When heap is fully expanded, the eden sizing logic knows how much free memory is available in the heap, and knows to not grow too much 
+		 */
+		maxEdenChange = freeRegions;
+		_extensions->globalVLHGCStats._heapSizingData.edenRegionChange = 0;
 	} else {
-		/* there isn't enough memory left for a desired Eden. Allow Eden to shrink to free size(could be less than minimum size or 0) before
-		 * triggering an allocation failure collection (i.e. a global STW collect)
-		 */ 
-		_edenRegionCount = freeRegions;
-		Trc_MM_SchedulingDelegate_calculateEdenSize_reduceToFreeBytes(env->getLanguageVMThread(), desiredEdenCount, _edenRegionCount);
+		/* Eden will inform the total heap resizing logic, that it needs to change total heap size in order to maintain same "tenure" size */
+		maxEdenChange = maxHeapExpansionRegions;
+		intptr_t edenChangeWithSurvivorHeadroom = desiredEdenChangeSize;
+		/* Total heap needs to be aware that by changing eden size, the amount of survivor space might also need to change */
+		if (0 < desiredEdenChangeSize) {
+			edenChangeWithSurvivorHeadroom = desiredEdenChangeSize + (intptr_t)ceil(((double)desiredEdenChangeSize * _edenSurvivalRateCopyForward));
+		} else if ((0 > desiredEdenChangeSize) && (16 < _edenRegionCount)) {
+			/* Only factor adjusting in survivor regions for total heap resizing when eden is not very small. Factoring in survivor regions when eden is tiny can lead to poor performance, particularly during startup */
+			edenChangeWithSurvivorHeadroom = desiredEdenChangeSize + (intptr_t)floor(((double)desiredEdenChangeSize * _edenSurvivalRateCopyForward));
+		}
+		_extensions->globalVLHGCStats._heapSizingData.edenRegionChange = OMR_MIN(maxEdenChange, edenChangeWithSurvivorHeadroom);
 	}
+
+	desiredEdenChangeSize = OMR_MIN(maxEdenChange, desiredEdenChangeSize);
+
+	_edenRegionCount = (uintptr_t)OMR_MAX(1, ((intptr_t)_edenRegionCount + desiredEdenChangeSize));
+
 	Trc_MM_SchedulingDelegate_calculateEdenSize_Exit(env->getLanguageVMThread(), (_edenRegionCount * regionSize));
 }
 
-UDATA
+intptr_t
+MM_SchedulingDelegate::moveTowardRecommendedEdenForExpandedHeap(MM_EnvironmentVLHGC *env, double edenChangeSpeed) 
+{
+	Assert_MM_true((edenChangeSpeed <= 1) && (edenChangeSpeed >= 0));
+
+	if ((0 == _historicalPartialGCTime) || (0 == _averagePgcInterval)) {
+		/* Until we have collected any information about PGC time, we don't have the data we need to make informed decision about eden size  */
+		return 0;
+	}
+
+	uintptr_t currentIdealEdenBytes = getIdealEdenSizeInBytes(env);
+	uintptr_t currentIdealEdenRegions = _idealEdenRegionCount;
+
+	/* 
+	 * The closer edenChangeSpeed is to 1, the larger the move towards edenChange will be. 
+	 * 1 implies that eden should move all the way towards edenChange.
+	 */
+	intptr_t edenChange = calculateRecommendedEdenChangeForExpandedHeap(env);
+	intptr_t targetEdenChange = (intptr_t)(edenChange * edenChangeSpeed);
+	uintptr_t targetEdenBytes = currentIdealEdenBytes + targetEdenChange;
+	uintptr_t targetEdenRegions = targetEdenBytes / _regionManager->getRegionSize();
+
+	return (intptr_t)targetEdenRegions - (intptr_t)currentIdealEdenRegions;
+}
+
+double 
+MM_SchedulingDelegate::calculatePercentOfHeapExpanded(MM_EnvironmentVLHGC *env)
+{
+	double ratioOfHeapExpanded = 0.0;
+	uintptr_t currentHeapSize = _regionManager->getRegionSize() * _numberOfHeapRegions;
+	uintptr_t minimumHeap = OMR_MIN(_extensions->initialMemorySize, currentHeapSize);
+	uintptr_t maximumHeap = _extensions->softMx == 0 ? _extensions->memoryMax : _extensions->softMx;
+
+	if ((maximumHeap == currentHeapSize) || (maximumHeap == minimumHeap)) {
+		ratioOfHeapExpanded = 1.0;
+	} else {
+		uintptr_t heapBytesOverMinimum = currentHeapSize - minimumHeap;
+		uintptr_t maximumHeapVariation = maximumHeap - minimumHeap;
+		ratioOfHeapExpanded = ((double)heapBytesOverMinimum) / ((double)maximumHeapVariation);
+	}
+	return ratioOfHeapExpanded;
+}
+
+void
+MM_SchedulingDelegate::checkEdenSizeAfterPgc(MM_EnvironmentVLHGC *env, bool globalSweepHappened)
+{
+	double ratioOfHeapExpanded = calculatePercentOfHeapExpanded(env);
+
+	double heapFullyExpandedThreshold = 0.9;
+	double heapPercentExpandedAboveThreshold = 0.0;
+	if (heapFullyExpandedThreshold < ratioOfHeapExpanded) {
+		heapPercentExpandedAboveThreshold = ratioOfHeapExpanded - heapFullyExpandedThreshold;
+	}
+
+	intptr_t heapNotFullyExpandedRecommendation = 0;
+	intptr_t heapFullyExpandedRecommendation = 0;
+
+	if (0.0 == heapPercentExpandedAboveThreshold) {
+		heapNotFullyExpandedRecommendation = calculateEdenChangeHeapNotFullyExpanded(env);
+	} else if (0.0 < heapPercentExpandedAboveThreshold) {
+		/** 
+		 * If heap is almost fully expanded, start to consider the recommendation given from moveTowardRecommendedEdenForExpandedHeap().
+		 */
+		if (globalSweepHappened) {
+			heapFullyExpandedRecommendation = moveTowardRecommendedEdenForExpandedHeap(env, 0.5);
+			heapNotFullyExpandedRecommendation = calculateEdenChangeHeapNotFullyExpanded(env);
+		} else if (0 == _pgcCountSinceGMPEnd % consecutivePGCToChangeEden){
+			/** 
+	 		 * Every consecutivePGCToChangeEden number of PGC's, check to see if eden size should change. 
+			 * This allows PGC to do some defragmentation work to finish, and for some statistics to stabilize
+ 			 */
+			heapFullyExpandedRecommendation = moveTowardRecommendedEdenForExpandedHeap(env, 0.25);
+			heapNotFullyExpandedRecommendation = calculateEdenChangeHeapNotFullyExpanded(env);
+		}
+	}
+
+	if (globalSweepHappened) {
+		resetPgcTimeStatistics(env);
+	}
+
+	Trc_MM_SchedulingDelegate_checkEdenSizeAfterPgc(env->getLanguageVMThread(), heapNotFullyExpandedRecommendation, heapFullyExpandedRecommendation, ratioOfHeapExpanded);
+
+	/** 
+	 * Once ratioOfHeapExpanded is over heapFullyExpandedThreshold, start to blend the recommendations provided by 
+	 * heapFullyExpandedRecommendation and heapNotFullyExpandedRecommendation, based off of how closely heap is to being fully expanded.
+	 * We do this to ensure a smoother transition between the 2 recommendations, which could potentially be pulling in opposite directions.
+	 * If the heap is 100% expanded for example, only care about heapFullyExpandedRecommendation, whereas if heap is not close to being fully expanded, 
+	 * only consider heapNotFullyExpandedRecommendation for purpose of eden resizing.
+	 */
+	double heapFullyExpandedSuggestionWeight = heapPercentExpandedAboveThreshold / (1.0 - heapFullyExpandedThreshold);
+	_edenSizeFactor += (intptr_t)MM_Math::weightedAverage((double)heapFullyExpandedRecommendation, (double)heapNotFullyExpandedRecommendation, heapFullyExpandedSuggestionWeight);
+}
+
+intptr_t
+MM_SchedulingDelegate::calculateEdenChangeHeapNotFullyExpanded(MM_EnvironmentVLHGC *env)
+{
+	intptr_t edenRegionChange = 0;
+	intptr_t edenChangeMagnitude = (intptr_t)ceil((edenChangePctHeapNotFullyExpanded * getIdealEdenSizeInBytes(env)) / _regionManager->getRegionSize());
+	edenChangeMagnitude = OMR_MIN(edenChangeMagnitude, (intptr_t)maximumEdenRegionChangeHeapNotFullyExpanded);
+	/* By changing by at least 2 regions, it allows eden size to grow a bit faster (usually in startup phase when no Xmx was set, and there is only 1 eden region) */
+	edenChangeMagnitude = OMR_MAX(edenChangeMagnitude, (intptr_t)minimumEdenRegionChangeHeapNotFullyExpanded);
+
+	/* Use _recentPartialGCTime instead of _historicalPartialGCTime here, since target pause time needs the immediate feedback which happens when eden (possibly) changes size */
+	double hybridEdenOverhead = calculateHybridEdenOverhead(env, (uintptr_t)_recentPartialGCTime, _partialGcOverhead, false);
+
+	Trc_MM_SchedulingDelegate_calculateEdenChangeHeapNotFullyExpanded(env->getLanguageVMThread(), hybridEdenOverhead, (uintptr_t)_recentPartialGCTime, mapPgcPauseOverheadToPgcCPUOverhead(env, (uintptr_t)_recentPartialGCTime, false));
+	 
+	/* 
+	 * Aim to get hybrid PGC overhead between extensions->dnssExpectedTimeRatioMinimum and extensions->dnssExpectedTimeRatioMaximum 
+	 * by increasing or decreasing eden by edenChangePctHeapNotFullyExpanded
+	 */
+	if (_extensions->dnssExpectedTimeRatioMinimum._valueSpecified > hybridEdenOverhead ) {
+		/* Shrink eden a bit */
+		edenRegionChange = edenChangeMagnitude * -1;
+	} else if (_extensions->dnssExpectedTimeRatioMaximum._valueSpecified < hybridEdenOverhead) {
+		/* Expand eden a bit */
+		edenRegionChange = edenChangeMagnitude;
+	}
+	return edenRegionChange;
+}
+
+double 
+MM_SchedulingDelegate::mapPgcPauseOverheadToPgcCPUOverhead(MM_EnvironmentVLHGC *env, uintptr_t pgcPauseTimeMs, bool heapFullyExpanded) {
+	
+	/* Convert expectedTimeRatioMinimum/Maximum to 0-100 based for this formula */
+	const double xminpct = _extensions->dnssExpectedTimeRatioMinimum._valueSpecified * 100;
+	const double xmaxpct = _extensions->dnssExpectedTimeRatioMaximum._valueSpecified * 100;
+	const double targetPauseTimeMs = (double)_extensions->tarokTargetMaxPauseTime;
+	const double pauseTimeTooHighOverheadLogBase = 1.0156;
+
+	double overhead = 0.0;
+
+	if (heapFullyExpanded) {
+		/* 
+		 * Eden size is being driven by heuristic which is trying to MINIMIZE hybrid overead, while trying to stay within tarokTargetMaxPauseTime,
+		 * The overhead logic here will map a low avg pgc time (ie, under targetPauseTimeMs), to a low overhead value (aka, a "better"/more desirable value)
+		 * Ex. Suppose tarokTargetMaxPauseTime == 100ms. 20ms -> 5% (good/desirable), 100ms -> 5% (still good), 110ms -> 6% (should possibly shrink) 500ms -> 80% (bad/undesirable/eden should probably shrink)
+		 */
+		double midpointPct = (xmaxpct + xminpct)/2.0;
+		if (pgcPauseTimeMs <= targetPauseTimeMs) {
+			/* Once the pgc time is at, or below the max pgc time, there is no "benefit" from shrinking it further, since we are already satisfying tarokTargetMaxPauseTime */
+			overhead = midpointPct;
+		} else {
+			/* 
+			 * If pgc time is above the max pgc time, map high PGC time values as very very high overhead, in efforts to bring the PGC time down to tarokTargetMaxPauseTime
+			 * If pgc time is only slightly above tarokTargetMaxPauseTime, then there is only a very small overhead penalty, 
+			 * wheras being 2x higher than the target pause time leads to a significantly bigger penalty.
+			 */
+			double overheadCurve = pow(pauseTimeTooHighOverheadLogBase, ((double)pgcPauseTimeMs - targetPauseTimeMs)) + midpointPct - 1;
+			overhead = OMR_MIN(100.0, overheadCurve);
+		}
+		
+	} else {
+		/* 
+		 * Eden sizing logic is trying to keep hybrid overhead between xminpct and xmaxpct, while trying to respect targetPauseTimeMs. 
+		 * The function/model used below adheres to the following high level concepts:
+		 * - if pgcPauseTimeMs is greater than targetPauseTimeMs, explicitly suggest contraction. ie, return a value < xminpct. Note: it is possible for this overhead to be negative if pgcPauseTimeMs is far beyond pause target - this is okay.
+		 * - if pgcPauseTimeMs < targetPauseTimeMs - 20, suggest neither explicit contraction nor explicit expansion, but rather, whatever the current cpu overhead currently is (which may be either expansion or contraction). In this case, we are far from targetPauseTimeMs, so cpu overhead can drive eden size 
+		 * - if (targetPauseTimeMs - 20) < pgcPauseTimeMs < targetPauseTimeMs, the mapped overhead is somewhere between xmaxpct and xminpct. The closer pgcPauseTimeMs is to targetPauseTimeMs, the closer the overhead will be to xminpct (which suggests contraction)
+		 * 
+		 *  NOTE: This mapped overhead value is later blended with pgc cpu overhead. This means that if the pgc pause time mapping suggested eden contraction, contraction is not guaranteed.
+		 */
+		double slope = (xminpct - xmaxpct) / 20;
+		overhead = (slope * (double)pgcPauseTimeMs) + (xminpct - (slope * targetPauseTimeMs));
+		/* 
+		 * Suggesting expansion simply because pgc time is small, isn't necessarily a good idea. 
+		 * Instead, if the pgc pause time is still relatively far from target pause time, simply return _partialGcOverhead so that pgc cpu overhead, so that pgc cpu overhead is effectively dictating eden size  
+		 */
+		overhead = OMR_MIN(overhead, _partialGcOverhead * 100);
+	}
+
+	return overhead;
+}
+
+double 
+MM_SchedulingDelegate::calculateHybridEdenOverhead(MM_EnvironmentVLHGC *env, uintptr_t pgcPauseTimeMs, double overhead, bool heapFullyExpanded)
+{
+	/* 
+	 * When trying to size eden, there is a delicate balance between pgc overhead (here, overhead is cpu %, or % of time that pgc is active 
+	 * versus inactive -> ex: pgc = 100ms, over 1000ms, overhead = 10%). In certain applications, with certain allocation patterns/liveness, 
+	 * pgc average time may be negatively impacted by growing eden unbounded. 
+	 * This function blends the pgc average time (whether it be the actual pgc historic time, or a "predicted" pgc pause time, is left up to the caller) with overhead (% of time gc is active relative to mutator).
+	 * This strikes a much better balance between pgc pause times, and gc cpu overhead, than if just cpu overhead was used.
+	 * 
+	 * By mapping a pgc time to a corresponding overhead (% of time gc is active relative to mutator), eden sizing logic can make a decision as to whether 
+	 * it wants to contract/expand, based on how much it will change the overhead and pgc times.
+	 */
+	double pgcTimeOverhead = mapPgcPauseOverheadToPgcCPUOverhead(env, pgcPauseTimeMs, heapFullyExpanded);
+	double hybridEdenOverheadHundredBased = MM_Math::weightedAverage(overhead * 100, pgcTimeOverhead, pgcCpuOverheadWeight);
+	return hybridEdenOverheadHundredBased / 100;
+}
+
+void 
+MM_SchedulingDelegate::adjustIdealEdenRegionCount(MM_EnvironmentVLHGC *env) 
+{
+
+	intptr_t edenChange = _edenSizeFactor;
+	/* Be clear that we have already consumed _edenSizeFactor */
+	_edenSizeFactor = 0;
+
+	/* Do not allow eden to grow/shrink past the min/max eden count */
+	intptr_t possibleEdenRegionCount = (intptr_t)_idealEdenRegionCount + edenChange;
+
+	if ((intptr_t)_minEdenRegionCount > possibleEdenRegionCount) {
+		edenChange = (intptr_t)_minEdenRegionCount - (intptr_t)_idealEdenRegionCount;
+	} else if ((intptr_t)_maxEdenRegionCount < possibleEdenRegionCount){
+		edenChange = (intptr_t)_maxEdenRegionCount - (intptr_t)_idealEdenRegionCount;
+	}
+
+	Trc_MM_SchedulingDelegate_adjustIdealEdenRegionCount(env->getLanguageVMThread(), _minEdenRegionCount, _maxEdenRegionCount, _idealEdenRegionCount, edenChange);
+
+	/* Inform the _idealEdenRegionCount that we need to change from current value. If there are not enough free regions, then eden will only as big as the amount of free regions */
+	_idealEdenRegionCount += edenChange;
+	/* Make sure we request at least 1 eden region as max */
+	_idealEdenRegionCount = OMR_MAX(1, _idealEdenRegionCount);
+	/* Make sure Min <= Max */
+	_minimumEdenRegionCount = OMR_MIN(_minimumEdenRegionCount, _idealEdenRegionCount);
+}
+
+uintptr_t
 MM_SchedulingDelegate::currentGlobalMarkIncrementTimeMillis(MM_EnvironmentVLHGC *env) const
 {
-	UDATA markIncrementMillis = 0;
+	uintptr_t markIncrementMillis = 0;
 	
 	if (0 == _extensions->tarokGlobalMarkIncrementTimeMillis) {
-		UDATA partialCollectsRemaining = estimatePartialGCsRemaining(env);
+		uintptr_t partialCollectsRemaining = estimatePartialGCsRemaining(env);
 
 		if (0 == partialCollectsRemaining) {
 			/* We're going to AF very soon so we need to finish the GMP this increment.  Set current global mark increment time to max */
 			markIncrementMillis = UDATA_MAX;
 		} else {
-			UDATA desiredGlobalMarkIncrementMillis = _dynamicGlobalMarkIncrementTimeMillis;
+			uintptr_t desiredGlobalMarkIncrementMillis = _dynamicGlobalMarkIncrementTimeMillis;
 			double remainingMillisToScan = estimateRemainingTimeMillisToScan();
-			UDATA minimumGlobalMarkIncrementMillis = (UDATA) (remainingMillisToScan / (double)partialCollectsRemaining);
+			uintptr_t minimumGlobalMarkIncrementMillis = (uintptr_t) (remainingMillisToScan / (double)partialCollectsRemaining);
 
 			markIncrementMillis = OMR_MAX(desiredGlobalMarkIncrementMillis, minimumGlobalMarkIncrementMillis);
 		}
@@ -1043,13 +1621,19 @@ MM_SchedulingDelegate::currentGlobalMarkIncrementTimeMillis(MM_EnvironmentVLHGC 
 	return markIncrementMillis;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::getCurrentEdenSizeInBytes(MM_EnvironmentVLHGC *env)
 {
 	return (_edenRegionCount * _regionManager->getRegionSize());
 }
 
-UDATA
+uintptr_t
+MM_SchedulingDelegate::getIdealEdenSizeInBytes(MM_EnvironmentVLHGC *env)
+{
+	return (_idealEdenRegionCount * _regionManager->getRegionSize());
+}
+
+uintptr_t
 MM_SchedulingDelegate::getCurrentEdenSizeInRegions(MM_EnvironmentVLHGC *env)
 {
 	return _edenRegionCount;
@@ -1058,74 +1642,54 @@ MM_SchedulingDelegate::getCurrentEdenSizeInRegions(MM_EnvironmentVLHGC *env)
 void
 MM_SchedulingDelegate::heapReconfigured(MM_EnvironmentVLHGC *env)
 {
-	UDATA edenMaximumBytes = _extensions->tarokIdealEdenMaximumBytes;
-	UDATA edenMinimumBytes = _extensions->tarokIdealEdenMinimumBytes;
+	uintptr_t edenMaximumBytes = _extensions->tarokIdealEdenMaximumBytes;
+	uintptr_t edenMinimumBytes = _extensions->tarokIdealEdenMinimumBytes;
 	Trc_MM_SchedulingDelegate_heapReconfigured_Entry(env->getLanguageVMThread(), edenMaximumBytes, edenMinimumBytes);
 	
-	UDATA regionSize = _regionManager->getRegionSize();
-	UDATA heapRegions = 0;
+	uintptr_t regionSize = _regionManager->getRegionSize();
+	_numberOfHeapRegions = 0;
 	
 	/* walk the managed regions (skipping cold area) to determine how large the managed heap is */
 	GC_HeapRegionIteratorVLHGC regionIterator(_regionManager, MM_HeapRegionDescriptor::MANAGED);
 	while (NULL != regionIterator.nextRegion()) {
-		heapRegions += 1;
+		_numberOfHeapRegions += 1;
 	}
-	UDATA currentHeapSize = heapRegions * regionSize;
-	/* since the heap is allowed to be one region less than the size requested (due to "acceptLess" in Virtual Memory), make sure that we consider the "reachable minimum" to be the real minimum heap size */
-	UDATA minimumHeap = OMR_MIN(_extensions->initialMemorySize, currentHeapSize);
-	UDATA edenIdealBytes = 0;
-	UDATA maximumHeap = _extensions->memoryMax;
-	if (currentHeapSize == maximumHeap) {
-		/* we are fully expanded or mx == ms so just return the maximum ideal eden */
-		edenIdealBytes = edenMaximumBytes;
-	} else {
-		/* interpolate between the maximum and minimum */
-		/* This logic follows the formula given in JAZZ 39694
-		 * for:  -XmsA -XmxB -XmnsC -XmnxD, "current heap size" W, "current Eden size" Z:
-		 * Z := C + ((W-A)/(B-A))(D-C)
-		 */
-		UDATA heapBytesOverMinimum = currentHeapSize - minimumHeap;
-		UDATA maximumHeapVariation = maximumHeap - minimumHeap;
-		/* if this is 0, we should have taken the first half of this if */
-		Assert_MM_true(0 != maximumHeapVariation);
-		double ratioOfHeapExpanded = ((double)heapBytesOverMinimum) / ((double)maximumHeapVariation);
-		UDATA maximumEdenVariation = edenMaximumBytes - edenMinimumBytes;
-		UDATA edenLinearScale = (UDATA)(ratioOfHeapExpanded * (double)maximumEdenVariation);
-		edenIdealBytes = edenMinimumBytes + edenLinearScale;
-	}
+	
+	/* The eden size is  being driven by GC overhead and time - Keep eden size the same. If eden needs to change, it will change elsewhere */
+	uintptr_t edenIdealBytes = getIdealEdenSizeInBytes(env);
+	_idealEdenRegionCount = OMR_MAX((edenIdealBytes + regionSize - 1) / regionSize, (edenMinimumBytes + regionSize - 1) / regionSize);
 
-	_idealEdenRegionCount = (edenIdealBytes + regionSize - 1) / regionSize;
 	Assert_MM_true(_idealEdenRegionCount > 0);
 	_minimumEdenRegionCount = OMR_MIN(_idealEdenRegionCount, ((MM_GlobalAllocationManagerTarok *)_extensions->globalAllocationManager)->getManagedAllocationContextCount());
 	Assert_MM_true(_minimumEdenRegionCount > 0);
 
-	Trc_MM_SchedulingDelegate_heapReconfigured_Exit(env->getLanguageVMThread(), heapRegions, _idealEdenRegionCount, _minimumEdenRegionCount);
+	Trc_MM_SchedulingDelegate_heapReconfigured_Exit(env->getLanguageVMThread(), _numberOfHeapRegions, _idealEdenRegionCount, _minimumEdenRegionCount);
 	Assert_MM_true(_idealEdenRegionCount >= _minimumEdenRegionCount);
 	
 	/* recalculate Eden Size after resize heap */
 	calculateEdenSize(env);
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::calculateGlobalMarkIncrementHeadroom(MM_EnvironmentVLHGC *env) const
 {
-	UDATA headroomIncrements = 0;
+	uintptr_t headroomIncrements = 0;
 
 	if (_regionConsumptionRate > 0.0) {
 		double headroomRegions = (double) _extensions->tarokKickoffHeadroomInBytes / _regionManager->getRegionSize();
 		double headroomPartialGCs = headroomRegions / _regionConsumptionRate;
 		double headroomGlobalMarkIncrements = headroomPartialGCs * (double)_extensions->tarokPGCtoGMPDenominator / (double)_extensions->tarokPGCtoGMPNumerator;
-		headroomIncrements = (UDATA) ceil(headroomGlobalMarkIncrements);
+		headroomIncrements = (uintptr_t) ceil(headroomGlobalMarkIncrements);
 	}
 	return headroomIncrements;
 }
 
-UDATA
+uintptr_t
 MM_SchedulingDelegate::estimateRemainingGlobalBytesToScan() const
 {
-	UDATA expectedGlobalBytesToScan = (UDATA) calculateEstimatedGlobalBytesToScan();
-	UDATA globalBytesScanned = ((MM_IncrementalGenerationalGC *)_extensions->getGlobalCollector())->getBytesScannedInGlobalMarkPhase();
-	UDATA remainingGlobalBytesToScan = MM_Math::saturatingSubtract(expectedGlobalBytesToScan, globalBytesScanned);
+	uintptr_t expectedGlobalBytesToScan = (uintptr_t) calculateEstimatedGlobalBytesToScan();
+	uintptr_t globalBytesScanned = ((MM_IncrementalGenerationalGC *)_extensions->getGlobalCollector())->getBytesScannedInGlobalMarkPhase();
+	uintptr_t remainingGlobalBytesToScan = MM_Math::saturatingSubtract(expectedGlobalBytesToScan, globalBytesScanned);
 
 	return remainingGlobalBytesToScan;
 }
@@ -1157,16 +1721,43 @@ MM_SchedulingDelegate::updateGMPStats(MM_EnvironmentVLHGC *env)
 	MM_MarkVLHGCStats * incrementalMarkStats = &(persistentGMPState->_vlhgcCycleStats._incrementalMarkStats);
 	MM_MarkVLHGCStats * concurrentMarkStats = &(persistentGMPState->_vlhgcCycleStats._concurrentMarkStats);
 
-	U_64 incrementalScanTime = (U_64) (((double) j9time_hires_delta(0, incrementalMarkStats->getScanTime(), J9PORT_TIME_DELTA_IN_MICROSECONDS)) / ((double) _extensions->gcThreadCount));
-	UDATA concurrentBytesScanned = concurrentMarkStats->_bytesScanned;
+	uint64_t incrementalScanTime = (uint64_t) (((double) j9time_hires_delta(0, incrementalMarkStats->getScanTime(), J9PORT_TIME_DELTA_IN_MICROSECONDS)) / ((double) _extensions->gcThreadCount));
+	uintptr_t concurrentBytesScanned = concurrentMarkStats->_bytesScanned;
 
-	_historicTotalIncrementalScanTimePerGMP = (U_64) ((_historicTotalIncrementalScanTimePerGMP * incrementalScanTimePerGMPHistoricWeight) + (incrementalScanTime * (1 - incrementalScanTimePerGMPHistoricWeight)));
-	_historicBytesScannedConcurrentlyPerGMP = (UDATA) ((_historicBytesScannedConcurrentlyPerGMP * bytesScannedConcurrentlyPerGMPHistoricWeight) + (concurrentBytesScanned * (1 - bytesScannedConcurrentlyPerGMPHistoricWeight)));
+	_historicTotalIncrementalScanTimePerGMP = (uint64_t) ((_historicTotalIncrementalScanTimePerGMP * incrementalScanTimePerGMPHistoricWeight) + (incrementalScanTime * (1 - incrementalScanTimePerGMPHistoricWeight)));
+	_historicBytesScannedConcurrentlyPerGMP = (uintptr_t) ((_historicBytesScannedConcurrentlyPerGMP * bytesScannedConcurrentlyPerGMPHistoricWeight) + (concurrentBytesScanned * (1 - bytesScannedConcurrentlyPerGMPHistoricWeight)));
 
 	Trc_MM_SchedulingDelegate_updateGMPStats(env->getLanguageVMThread(), _historicTotalIncrementalScanTimePerGMP, incrementalScanTime, _historicBytesScannedConcurrentlyPerGMP, concurrentBytesScanned);
 }
 
-U_64
+void 
+MM_SchedulingDelegate::updatePgcTimePrediction(MM_EnvironmentVLHGC *env)
+{
+	/* 
+	 * Create a model that passes through (minimumEdenRegions,minimumPgcTime) and (current eden size in regions, pgcTime) 
+	 * By remembering historic values of _pgcTimeIncreasePerEdenFactor, it is possible to reasonably accuratly predict how long PGC will take, if eden were to change size.
+	 * 
+	 * Note: The formula derived for predicting pgc times, require that x1 and x2 are in GB.
+	 */
+	double x1 = (double)_regionManager->getRegionSize() / 1000000000;
+	double y1 = (double)minimumPgcTime;
+
+	double x2 = (double)getCurrentEdenSizeInBytes(env) / 1000000000;
+	double y2 = (double)_historicalPartialGCTime;
+
+	/* 
+	 * Calculate how closely related PGC is to eden time. The closer _pgcTimeIncreasePerEdenFactor is to 1.0, the more directly changing eden size will impact pgc time.
+	 * The higher _pgcTimeIncreasePerEdenFactor is from 1, the less changing eden size will affect pgc time. 
+	 * In certain edge cases where eden is very small (minimumEdenRegions in size), or pgc time is very small, skip this set of calculation, since the results will not be correct
+	 */
+	if ((x1 < x2) && (y1 < y2)) {
+		double timeDiff = y1 - y2;
+		double edenSizeRatio = ((x1 + 1.0) / (x2 + 1.0));
+		_pgcTimeIncreasePerEdenFactor = pow(edenSizeRatio, (1.0/timeDiff));
+	} 
+}
+
+uint64_t
 MM_SchedulingDelegate::getScanTimeCostPerGMP(MM_EnvironmentVLHGC *env)
 {
 	MM_GCExtensions * extensions = MM_GCExtensions::getExtensions(env);
@@ -1178,6 +1769,5 @@ MM_SchedulingDelegate::getScanTimeCostPerGMP(MM_EnvironmentVLHGC *env)
 		concurrentCost = extensions->tarokConcurrentMarkingCostWeight * ((double)_historicBytesScannedConcurrentlyPerGMP * scanRate );
 	}
 
-	return (U_64) (incrementalCost + concurrentCost);
+	return (uint64_t) (incrementalCost + concurrentCost);
 }
-

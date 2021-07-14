@@ -306,6 +306,18 @@ MM_VerboseHandlerOutputVLHGC::hasOutputMemoryInfoInnerStanza()
 	return true;
 }
 
+const char *
+MM_VerboseHandlerOutputVLHGC::getSubSpaceType(uintptr_t typeFlags)
+{
+	const char *subSpaceType = NULL;
+	if (MEMORY_TYPE_NEW == typeFlags) {
+		subSpaceType = "eden";
+	} else {
+		subSpaceType = "total heap";
+	}
+	return subSpaceType;
+}
+
 void
 MM_VerboseHandlerOutputVLHGC::outputMemoryInfoInnerStanza(MM_EnvironmentBase *env, UDATA indent, MM_CollectionStatistics *statsBase)
 {

@@ -1,6 +1,6 @@
 
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -80,6 +80,9 @@ public:
 	UDATA _splitArraysProcessed; /**< The number of array chunks (not counting parts smaller than the split size) processed by this thread */
 #endif /* J9MODRON_TGC_PARALLEL_STATISTICS */
 
+	U_64 _concurrentGCThreadsStartTimeSum; /**< The sum of all gc cpu thread times when concurrent gc work began */
+	U_64 _concurrentGCThreadsEndTimeSum; /**< The sum of all gc cpu thread times when concurrent gc work ended */
+	U_64 _concurrentMarkGCThreadsTotalWorkTime; /**< The slowdown attributed to concurrent GC work */
 /* function members */
 private:
 protected:
@@ -113,6 +116,11 @@ public:
 #if defined(J9MODRON_TGC_PARALLEL_STATISTICS)
 		_splitArraysProcessed = 0;
 #endif /* J9MODRON_TGC_PARALLEL_STATISTICS */
+
+		_concurrentGCThreadsStartTimeSum = 0;
+		_concurrentGCThreadsEndTimeSum = 0;
+		_concurrentMarkGCThreadsTotalWorkTime = 0;
+
 	}
 
 	void merge(MM_MarkVLHGCStats *statsToMerge)
@@ -140,6 +148,9 @@ public:
 		_doubleMappedArrayletsCandidates += statsToMerge->_doubleMappedArrayletsCandidates;
 #endif /* J9VM_GC_ENABLE_DOUBLE_MAP */	
 
+		_concurrentGCThreadsStartTimeSum += statsToMerge->_concurrentGCThreadsStartTimeSum;
+		_concurrentGCThreadsEndTimeSum += statsToMerge->_concurrentGCThreadsEndTimeSum;
+		_concurrentMarkGCThreadsTotalWorkTime += statsToMerge->_concurrentMarkGCThreadsTotalWorkTime;
 
 #if defined(J9MODRON_TGC_PARALLEL_STATISTICS)
 		/* It may not ever be useful to merge these stats, but do it anyways */
@@ -168,6 +179,9 @@ public:
 #if defined(J9MODRON_TGC_PARALLEL_STATISTICS)
 		,_splitArraysProcessed(0)
 #endif /* J9MODRON_TGC_PARALLEL_STATISTICS */
+		,_concurrentGCThreadsStartTimeSum(0)
+		,_concurrentGCThreadsEndTimeSum(0)
+		,_concurrentMarkGCThreadsTotalWorkTime(0)
 	{
 	}
 	

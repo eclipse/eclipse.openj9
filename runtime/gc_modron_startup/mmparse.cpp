@@ -919,24 +919,32 @@ gcParseSovereignArguments(J9JavaVM *vm)
 		goto _error;
 	}
 
-	result =  option_set_to_opt_percent(vm, "-Xmaxt", &index, EXACT_MEMORY_MATCH, &extensions->heapExpansionGCTimeThreshold);
-	if (OPTION_OK != result) {
-		if (OPTION_MALFORMED == result) {
-			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_MUST_BE_NUMBER, "-Xmaxt");
-		} else {
-			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_PERCENT_OUT_OF_RANGE, "-Xmaxt", 0.0, 1.0);
+	
+	if (-1 != FIND_ARG_IN_VMARGS(EXACT_MEMORY_MATCH, "-Xmaxt", NULL)) {
+		extensions->heapExpansionGCTimeThreshold._wasSpecified = true;
+		result =  option_set_to_opt_percent(vm, "-Xmaxt", &index, EXACT_MEMORY_MATCH, &extensions->heapExpansionGCTimeThreshold._valueSpecified);
+		if (OPTION_OK != result) {
+			if (OPTION_MALFORMED == result) {
+				j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_MUST_BE_NUMBER, "-Xmaxt");
+			} else {
+				j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_PERCENT_OUT_OF_RANGE, "-Xmaxt", 0.0, 1.0);
+			}
+			goto _error;
 		}
-		goto _error;
-	}
+	} 
 
-	result =  option_set_to_opt_percent(vm, "-Xmint", &index, EXACT_MEMORY_MATCH, &extensions->heapContractionGCTimeThreshold);
-	if (OPTION_OK != result) {
-		if (OPTION_MALFORMED == result) {
-			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_MUST_BE_NUMBER, "-Xmint");
-		} else {
-			j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_PERCENT_OUT_OF_RANGE, "-Xmint", 0.0, 1.0);
+
+	if (-1 != FIND_ARG_IN_VMARGS(EXACT_MEMORY_MATCH, "-Xmint", NULL)) {
+		extensions->heapContractionGCTimeThreshold._wasSpecified = true;
+		result =  option_set_to_opt_percent(vm, "-Xmint", &index, EXACT_MEMORY_MATCH, &extensions->heapContractionGCTimeThreshold._valueSpecified);
+		if (OPTION_OK != result) {
+			if (OPTION_MALFORMED == result) {
+				j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_MUST_BE_NUMBER, "-Xmint");
+			} else {
+				j9nls_printf(PORTLIB, J9NLS_ERROR, J9NLS_GC_OPTIONS_PERCENT_OUT_OF_RANGE, "-Xmint", 0.0, 1.0);
+			}
+			goto _error;
 		}
-		goto _error;
 	}
 
 	if(-1 != FIND_ARG_IN_VMARGS(EXACT_MEMORY_MATCH, VMOPT_XGCTHREADS, NULL)) {
