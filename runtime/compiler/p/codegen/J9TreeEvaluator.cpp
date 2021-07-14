@@ -6482,6 +6482,53 @@ TR::Register *J9::Power::TreeEvaluator::VMnewEvaluator(TR::Node *node, TR::CodeG
             genInitArrayHeader(node, iCursor, isVariableLen, clazz, NULL, resReg, zeroReg, condReg, enumReg, dataSizeReg,
                   tmp5Reg, tmp4Reg, conditions, needZeroInit, cg);
 
+#ifdef TR_TARGET_64BIT
+         TR::Register *offsetReg = tmp5Reg;
+         TR::Register *firstDataElementReg = tmp4Reg;
+         TR::MemoryReference *dataAddrSlotMR = NULL;
+
+         if (TR::Compiler->om.compressObjectReferences() && isVariableLen)
+            {
+            // We need to check sizeReg at runtime to determine correct offset of dataAddr field.
+            if (comp->getOption(TR_TraceCG))
+               traceMsg(comp, "Node (%p): Dealing with compressed refs variable length array.\n", node);
+
+            TR_ASSERT_FATAL_WITH_NODE(node, (fej9->getOffsetOfDiscontiguousDataAddrField() - fej9->getOffsetOfContiguousDataAddrField()) == 8, "DataAddr field offset for discontiguous arrays is expected to be 8 bytes more than dataAddr field offset for contiguous arrays. But was %d bytes for discontigous and %d bytes for contiguous.\n", fej9->getOffsetOfDiscontiguousDataAddrField(), fej9->getOffsetOfContiguousDataAddrField());
+
+            iCursor = generateTrg1Src1Instruction(cg, TR::InstOpCode::neg, node, offsetReg, enumReg);
+            iCursor = generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::sradi, node, offsetReg, offsetReg, 63);
+            // andi_r works because sradi replicates bit 0 of offsetReg to fill the vacated positions. 1 for length > 0 and 0 otherwise.
+            iCursor = generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::andi_r, node, offsetReg, offsetReg, 8);
+            iCursor = generateTrg1Src1Instruction(cg, TR::InstOpCode::neg, node, offsetReg, offsetReg);
+            iCursor = generateTrg1Src2Instruction(cg, TR::InstOpCode::add, node, offsetReg, resReg, offsetReg);
+
+            iCursor = generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, firstDataElementReg, offsetReg, TR::Compiler->om.discontiguousArrayHeaderSizeInBytes());
+            dataAddrSlotMR = TR::MemoryReference::createWithDisplacement(cg, offsetReg, fej9->getOffsetOfDiscontiguousDataAddrField(), TR::Compiler->om.sizeofReferenceAddress());
+            }
+         else if (!isVariableLen && node->getFirstChild()->getOpCode().isLoadConst() && node->getFirstChild()->getInt() == 0)
+            {
+            if (comp->getOption(TR_TraceCG))
+               traceMsg(comp, "Node (%p): Dealing with zero size fixed length array.\n", node);
+
+            iCursor = generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, firstDataElementReg, resReg, TR::Compiler->om.discontiguousArrayHeaderSizeInBytes());
+            dataAddrSlotMR = TR::MemoryReference::createWithDisplacement(cg, resReg, fej9->getOffsetOfDiscontiguousDataAddrField(), TR::Compiler->om.sizeofReferenceAddress());
+            }
+         else
+            {
+            if (comp->getOption(TR_TraceCG))
+               traceMsg(comp, "Node (%p): Dealing with either contiguous array of non zero size or noncompressed refs variable length array.\n", node);
+
+            if (!TR::Compiler->om.compressObjectReferences())
+               TR_ASSERT_FATAL_WITH_NODE(node, fej9->getOffsetOfDiscontiguousDataAddrField() == fej9->getOffsetOfContiguousDataAddrField(), "When using full refs, dataAddr field offset is expected to be same for both discontiguous and contiguous arrays. But was %d bytes for discontiguous and %d bytes for contiguous.\n", fej9->getOffsetOfDiscontiguousDataAddrField(), fej9->getOffsetOfContiguousDataAddrField());
+
+            iCursor = generateTrg1Src1ImmInstruction(cg, TR::InstOpCode::addi, node, firstDataElementReg, resReg, TR::Compiler->om.contiguousArrayHeaderSizeInBytes());
+            dataAddrSlotMR = TR::MemoryReference::createWithDisplacement(cg, resReg, fej9->getOffsetOfContiguousDataAddrField(), TR::Compiler->om.sizeofReferenceAddress());
+            }
+
+         // store the first data element address to dataAddr slot
+         iCursor = generateMemSrc1Instruction(cg, TR::InstOpCode::stw, node, dataAddrSlotMR, firstDataElementReg);
+#endif /* TR_TARGET_64BIT */
+
          if (generateArraylets)
             {
             //write arraylet pointer to object header
