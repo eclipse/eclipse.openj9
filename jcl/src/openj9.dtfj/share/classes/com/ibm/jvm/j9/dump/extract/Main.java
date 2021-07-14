@@ -1,6 +1,6 @@
 /*[INCLUDE-IF Sidecar18-SE]*/
 /*******************************************************************************
- * Copyright (c) 2004, 2020 IBM Corp. and others
+ * Copyright (c) 2004, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -30,9 +30,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -245,6 +251,7 @@ public class Main {
 	private final String _dumpName;
 	private final File _virtualRootDirectory;
 	private final boolean _verbose;
+	private final boolean _excludeCoreFile;
 	private static boolean _throwExceptions;
 	private ICoreFileReader _dump;
 	private static final String J9_LIB_NAME = "j9jextract"; //$NON-NLS-1$
@@ -274,6 +281,7 @@ public class Main {
 		boolean throwExceptions = false;
 		boolean zip = true;
 		boolean disableBuildIdCheck = false;
+		boolean excludeCoreFile = false;
 
 		if (args.length == 0) {
 			usageMessage(null, JEXTRACT_SUCCESS);
@@ -312,6 +320,8 @@ public class Main {
 					throwExceptions = true;
 				} else if (args[i].equals("-r")) { //$NON-NLS-1$
 					disableBuildIdCheck = true;
+				} else if (args[i].equals("-x")) { //$NON-NLS-1$
+					excludeCoreFile = true;
 				} else {
 					usageMessage("Unrecognized option: " + args[i], JEXTRACT_SYNTAX_ERROR); //$NON-NLS-1$
 				}
@@ -326,7 +336,7 @@ public class Main {
 
 		ensure(null != dumpName, "No dump file specified"); //$NON-NLS-1$
 
-		Main dumper = new Main(dumpName, virtualRootDirectory, verbose, throwExceptions, disableBuildIdCheck);
+		Main dumper = new Main(dumpName, virtualRootDirectory, verbose, throwExceptions, disableBuildIdCheck, excludeCoreFile);
 
 		if (interactive) {
 			dumper.runInteractive();
@@ -362,6 +372,7 @@ public class Main {
 		report("    -p prefix           prefix for all paths (absolute or relative)"); //$NON-NLS-1$
 		report("    -r                  relax version checking"); //$NON-NLS-1$
 		report("    -v                  enable verbose output"); //$NON-NLS-1$
+		report("    -x                  exclude dump_name from output file"); //$NON-NLS-1$
 		report("    --                  mark end of options"); //$NON-NLS-1$
 		errorMessage(message, code);
 	}
@@ -389,13 +400,15 @@ public class Main {
 		}
 	}
 
-	private Main(String dumpName, File virtualRootDirectory, boolean verbose, boolean throwExceptions, boolean disableBuildIdCheck) {
+	private Main(String dumpName, File virtualRootDirectory, boolean verbose, boolean throwExceptions,
+			boolean disableBuildIdCheck, boolean excludeCoreFile) {
 		// System.err.println("Main.Main entered dn=" + dumpName + " vrd=" + virtualRootDirectory + " v=" + verbose);
 
 		_dumpName = dumpName;
 		_virtualRootDirectory = virtualRootDirectory;
 		_verbose = verbose;
 		_throwExceptions = throwExceptions;
+		_excludeCoreFile = excludeCoreFile;
 
 		try {
 			System.loadLibrary(J9_LIB_NAME);
@@ -414,12 +427,13 @@ public class Main {
 		try {
 			reader = new ClosingFileReader(dumpFile);
 		} catch (FileNotFoundException e) {
-			if (false == dumpFile.exists())
+			if (false == dumpFile.exists()) {
 				errorMessage("Error. Could not find dump file: " + dumpName, JEXTRACT_FILE_ERROR); //$NON-NLS-1$
-			else if (false == dumpFile.canRead())
+			} else if (false == dumpFile.canRead()) {
 				errorMessage("Error. Unable to read dump file (check permission): " + dumpName, JEXTRACT_FILE_ERROR); //$NON-NLS-1$
-			else
+			} else {
 				errorMessage("Error. Unexpected FileNotFoundException occurred opening: " + dumpName, JEXTRACT_FILE_ERROR, e); //$NON-NLS-1$
+			}
 		} catch (IOException e) {
 			errorMessage(e.getMessage(), JEXTRACT_FILE_ERROR);
 		}
@@ -453,11 +467,15 @@ public class Main {
 
 	private void runZip(String outputName) {
 		// Zip up the dump, libraries and (optionally) XML file
-		List<String> files = new ArrayList<>();
+		Set<String> files = new LinkedHashSet<>();
 		files.add(_dumpName);
 
 		for (Iterator<?> iter = _dump.getAdditionalFileNames(); iter.hasNext();) {
 			files.add((String) iter.next());
+		}
+
+		if (_excludeCoreFile) {
+			files.remove(_dumpName);
 		}
 
 		try {
@@ -485,8 +503,10 @@ public class Main {
 			// Ignore
 		}
 
+		String zipFileName = (null != outputName) ? outputName : _dumpName.concat(".zip"); //$NON-NLS-1$
+		Set<String> excluded = _excludeCoreFile ? Collections.singleton(_dumpName) : Collections.emptySet();
 		try {
-			createZipFromFileNames(null != outputName ? outputName : _dumpName.concat(".zip"), files.iterator(), _builder); //$NON-NLS-1$
+			createZipFromFileNames(zipFileName, files, excluded, _builder);
 		} catch (Exception e) {
 			errorMessage(e.getMessage(), JEXTRACT_INTERNAL_ERROR, e);
 		}
@@ -531,15 +551,41 @@ public class Main {
 		System.err.println(message);
 	}
 
-	private static void createZipFromFileNames(String zipFileName, Iterator<String> fileNames, Builder fileResolver)
-			throws Exception {
+	private static void createZipFromFileNames(String zipFileName, Collection<String> fileNames,
+			Collection<String> excludedNames, Builder fileResolver) throws Exception {
 		report("Creating archive file: " + zipFileName); //$NON-NLS-1$
 		try {
-			Set<String> filesInZip = new HashSet<>();
 			ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(zipFileName));
+			if (!excludedNames.isEmpty()) {
+				final String excludedFilesFileName = "excluded-files.txt"; //$NON-NLS-1$
+
+				report("Adding \"" + excludedFilesFileName + "\""); //$NON-NLS-1$ //$NON-NLS-2$
+
+				ZipEntry zipEntry = new ZipEntry(excludedFilesFileName);
+
+				zipEntry.setTime(System.currentTimeMillis());
+
+				zip.putNextEntry(zipEntry);
+
+				try {
+					@SuppressWarnings("resource" /* we can't close noteWriter */)
+					PrintWriter noteWriter = new PrintWriter(new OutputStreamWriter(zip, StandardCharsets.UTF_8));
+
+					noteWriter.println("Files omitted from archive"); //$NON-NLS-1$
+					noteWriter.println("=========================="); //$NON-NLS-1$
+
+					for (String excludedName : excludedNames) {
+						noteWriter.println(excludedName);
+					}
+
+					noteWriter.flush();
+				} finally {
+					zip.closeEntry();
+				}
+			}
 			byte[] buffer = new byte[ZIP_BUFFER_SIZE];
-			while (fileNames.hasNext()) {
-				String name = fileNames.next();
+			Set<String> filesInZip = new HashSet<>();
+			for (String name : fileNames) {
 				try (ClosingFileReader in = fileResolver.openFile(name)) {
 					boolean mvsfile = in.isMVSFile();
 					String absolute = in.getAbsolutePath();
