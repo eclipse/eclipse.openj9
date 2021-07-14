@@ -97,7 +97,7 @@ class GCArrayletObjectModel_V2 extends GCArrayletObjectModelBase
 	{
 		boolean isCorrectDataPointer = true;
 			if(super.isInlineContiguousArraylet(arrayPtr)) {
-				isCorrectDataPointer = J9IndexableObjectHelper.getDataPointerForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
+				isCorrectDataPointer = J9IndexableObjectHelper.getDataAddrForContiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.contiguousHeaderSize())));
 			} else {
 				isCorrectDataPointer = J9IndexableObjectHelper.getDataAddrForDiscontiguous(arrayPtr).equals(VoidPointer.cast(arrayPtr.addOffset(J9IndexableObjectHelper.discontiguousHeaderSize())));
 			}
