@@ -153,7 +153,7 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 		} 
 		*/
 		//return VoidPointer.cast(((J9IndexableObjectContiguous)objPointer).dataAddr);
-		return VoidPointer.cast(J9IndexableObjectContiguousPointer.cast(objPointer).dataAddr);
+		return VoidPointer.cast((J9IndexableObjectContiguousPointer.cast(objPointer)).dataAddr);
 	}
 
 	public static VoidPointer getDataAddrForDiscontiguous(J9IndexableObjectPointer objPointer)
@@ -167,7 +167,7 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 		}
 		*/
 		//return VoidPointer.cast(((J9IndexableObjectDiscontiguous)objPointer).dataAddr);
-		return VoidPointer.cast(J9IndexableObjectDiscontiguousPointer.cast(objPointer).dataAddr);
+		return VoidPointer.cast((J9IndexableObjectDiscontiguousPointer.cast(objPointer)).dataAddr);
 	}
 
 	/**
