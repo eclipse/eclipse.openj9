@@ -142,7 +142,7 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 		return J9IndexableObjectDiscontiguous.SIZEOF;
 	}
 
-	public static VoidPointer getDataAddrForContiguous(J9IndexableObjectPointer objPointer)
+	public static VoidPointer getDataAddrForContiguous(J9IndexableObjectPointer objPointer) throws CorruptDataException 
 	{
 		/*
 		if (mixedReferenceMode) {
@@ -156,7 +156,7 @@ public class J9IndexableObjectHelper extends J9ObjectHelper
 		return VoidPointer.cast((J9IndexableObjectContiguousPointer.cast(objPointer)).dataAddr());
 	}
 
-	public static VoidPointer getDataAddrForDiscontiguous(J9IndexableObjectPointer objPointer)
+	public static VoidPointer getDataAddrForDiscontiguous(J9IndexableObjectPointer objPointer) throws CorruptDataException 
 	{
 		/*
 		if (mixedReferenceMode) {
