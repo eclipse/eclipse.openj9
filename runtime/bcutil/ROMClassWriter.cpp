@@ -302,6 +302,7 @@ ROMClassWriter::ROMClassWriter(BufferManager *bufferManager, ClassFileOracle *cl
 	_fieldsSRPKey(srpKeyProducer->generateKey()),
 	_cpDescriptionShapeSRPKey(srpKeyProducer->generateKey()),
 	_innerClassesSRPKey(srpKeyProducer->generateKey()),
+	_enclosedInnerClassesSRPKey(srpKeyProducer->generateKey()),
 #if JAVA_SPEC_VERSION >= 11
 	_nestMembersSRPKey(srpKeyProducer->generateKey()),
 #endif /* JAVA_SPEC_VERSION >= 11 */
@@ -397,6 +398,8 @@ ROMClassWriter::writeROMClass(Cursor *cursor,
 		cursor->writeU32(_classFileOracle->getMemberAccessFlags(), Cursor::GENERIC);
 		cursor->writeU32(_classFileOracle->getInnerClassCount(), Cursor::GENERIC);
 		cursor->writeSRP(_innerClassesSRPKey, Cursor::SRP_TO_GENERIC);
+		cursor->writeU32(_classFileOracle->getEnclosedInnerClassCount(), Cursor::GENERIC);
+		cursor->writeSRP(_enclosedInnerClassesSRPKey, Cursor::SRP_TO_GENERIC);
 #if JAVA_SPEC_VERSION >= 11
 		cursor->writeSRP(_srpKeyProducer->mapCfrConstantPoolIndexToKey(_classFileOracle->getNestHostNameIndex()), Cursor::SRP_TO_UTF8);
 		cursor->writeU16(_classFileOracle->getNestMembersCount(), Cursor::GENERIC);
@@ -436,6 +439,7 @@ ROMClassWriter::writeROMClass(Cursor *cursor,
 	writeFields(cursor, markAndCountOnly);
 	writeInterfaces(cursor, markAndCountOnly);
 	writeInnerClasses(cursor, markAndCountOnly);
+	writeEnclosedInnerClasses(cursor, markAndCountOnly);
 #if JAVA_SPEC_VERSION >= 11
 	writeNestMembers(cursor, markAndCountOnly);
 #endif /* JAVA_SPEC_VERSION >= 11 */
@@ -750,6 +754,13 @@ public:
 	{
 		if (!_markAndCountOnly) {
 			_classFileOracle->innerClassesDo(this); /* visitConstantPoolIndex */
+		}
+	}
+
+	void writeEnclosedInnerClasses()
+	{
+		if (!_markAndCountOnly) {
+			_classFileOracle->enclosedInnerClassesDo(this); /* visitConstantPoolIndex */
 		}
 	}
 
@@ -1148,6 +1159,19 @@ ROMClassWriter::writeInnerClasses(Cursor *cursor, bool markAndCountOnly)
 	Helper(cursor, markAndCountOnly, _classFileOracle, _srpKeyProducer, _srpOffsetTable, _constantPoolMap, size, _interfaceInjectionInfo).writeInnerClasses();
 #else /* J9VM_OPT_VALHALLA_VALUE_TYPES */
 	Helper(cursor, markAndCountOnly, _classFileOracle, _srpKeyProducer, _srpOffsetTable, _constantPoolMap, size).writeInnerClasses();
+#endif /* J9VM_OPT_VALHALLA_VALUE_TYPES */
+}
+
+void
+ROMClassWriter::writeEnclosedInnerClasses(Cursor *cursor, bool markAndCountOnly)
+{
+	cursor->mark(_enclosedInnerClassesSRPKey);
+	UDATA size = UDATA(_classFileOracle->getEnclosedInnerClassCount()) * sizeof(J9SRP);
+	CheckSize _(cursor, size);
+#if defined(J9VM_OPT_VALHALLA_VALUE_TYPES)
+	Helper(cursor, markAndCountOnly, _classFileOracle, _srpKeyProducer, _srpOffsetTable, _constantPoolMap, size, _interfaceInjectionInfo).writeEnclosedInnerClasses();
+#else /* J9VM_OPT_VALHALLA_VALUE_TYPES */
+	Helper(cursor, markAndCountOnly, _classFileOracle, _srpKeyProducer, _srpOffsetTable, _constantPoolMap, size).writeEnclosedInnerClasses();
 #endif /* J9VM_OPT_VALHALLA_VALUE_TYPES */
 }
 

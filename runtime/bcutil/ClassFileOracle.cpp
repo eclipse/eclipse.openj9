@@ -168,6 +168,7 @@ ClassFileOracle::ClassFileOracle(BufferManager *bufferManager, J9CfrClassFile *c
 	_doubleScalarStaticCount(0),
 	_memberAccessFlags(0),
 	_innerClassCount(0),
+	_enclosedInnerClassCount(0),
 #if JAVA_SPEC_VERSION >= 11
 	_nestMembersCount(0),
 	_nestHost(0),
@@ -470,6 +471,13 @@ ClassFileOracle::walkAttributes()
 						markConstantUTF8AsReferenced(entry->innerNameIndex);
 						_simpleNameIndex = entry->innerNameIndex;
 					}
+				/* Count all entries in the InnerClass attribute (except the inner class itself) so as
+				 * to check the InnerClass attribute between the inner classes and the enclosing class.
+				 * See getDeclaringClass() for details.
+				 */
+				} else {
+					markClassNameAsReferenced(entry->innerClassInfoIndex);
+					_enclosedInnerClassCount++;
 				}
 			}
 			Trc_BCU_Assert_Equals(NULL, _innerClasses);

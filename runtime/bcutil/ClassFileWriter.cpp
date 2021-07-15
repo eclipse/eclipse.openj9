@@ -123,7 +123,10 @@ ClassFileWriter::analyzeROMClass()
 #endif /* JAVA_SPEC_VERSION >= 11 */
 
 	/* For a local class only InnerClasses.class[i].inner_name_index is preserved as simpleName in its J9ROMClass */
-	if ((0 != _romClass->innerClassCount) || J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)) {
+	if ((0 != _romClass->innerClassCount)
+	|| (0 != _romClass->enclosedInnerClassCount)
+	|| J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)
+	) {
 		addEntry((void *) &INNER_CLASSES, 0, CFR_CONSTANT_Utf8);
 
 		if (NULL != outerClassName) {
@@ -137,6 +140,11 @@ ClassFileWriter::analyzeROMClass()
 		J9SRP * innerClasses = (J9SRP *) J9ROMCLASS_INNERCLASSES(_romClass);
 		for (UDATA i = 0; i < _romClass->innerClassCount; i++, innerClasses++) {
 			J9UTF8 * className = NNSRP_PTR_GET(innerClasses, J9UTF8 *);
+			addClassEntry(className, 0);
+		}
+		J9SRP * enclosedInnerClasses = (J9SRP *) J9ROMCLASS_ENCLOSEDINNERCLASSES(_romClass);
+		for (UDATA i = 0; i < _romClass->enclosedInnerClassCount; i++, enclosedInnerClasses++) {
+			J9UTF8 * className = NNSRP_PTR_GET(enclosedInnerClasses, J9UTF8 *);
 			addClassEntry(className, 0);
 		}
 	}
@@ -954,7 +962,10 @@ ClassFileWriter::writeAttributes()
 	U_16 nestMemberCount = _romClass->nestMemberCount;
 #endif /* JAVA_SPEC_VERSION >= 11 */
 
-	if ((0 != _romClass->innerClassCount) || J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)) {
+	if ((0 != _romClass->innerClassCount)
+	|| (0 != _romClass->enclosedInnerClassCount)
+	|| J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)
+	) {
 		attributesCount += 1;
 	}
 	if (NULL != enclosingObject) {
@@ -992,8 +1003,11 @@ ClassFileWriter::writeAttributes()
 #endif /* JAVA_SPEC_VERSION >= 11 */
 	writeU16(attributesCount);
 
-	if ((0 != _romClass->innerClassCount) || J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)) {
-		U_16 innerClassesCount(_romClass->innerClassCount);
+	if ((0 != _romClass->innerClassCount)
+	|| (0 != _romClass->enclosedInnerClassCount)
+	|| J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)
+	) {
+		U_16 innerClassesCount(_romClass->innerClassCount + _romClass->enclosedInnerClassCount);
 
 		if (J9_ARE_ANY_BITS_SET(_romClass->extraModifiers, J9AccClassInnerClass)) {
 			/* This is an inner class, so we have one extra inner class attribute to allocate/write */
@@ -1018,6 +1032,22 @@ ClassFileWriter::writeAttributes()
 			writeU16(thisClassCPIndex);
 
 			/* NOTE: innerClassAccessFlags and innerNameIndex are not preserved in the ROM class - technically incorrect, but this should only matter to compilers */
+			writeU16(0); /* innerNameIndex */
+			writeU16(0); /* innerClassAccessFlags */
+		}
+
+		/* Write enclosed inner classes of this class */
+		J9SRP * enclosedInnerClasses = (J9SRP *) J9ROMCLASS_ENCLOSEDINNERCLASSES(_romClass);
+		/* Write the enclosed inner class entries for inner classes of this class */
+		for (UDATA i = 0; i < _romClass->enclosedInnerClassCount; i++, enclosedInnerClasses++) {
+			J9UTF8 * enclosedInnerClassName = NNSRP_PTR_GET(enclosedInnerClasses, J9UTF8 *);
+
+			writeU16(indexForClass(enclosedInnerClassName));
+			/* NOTE: outerClassInfoIndex (these inner class are not the declared classes of this class),
+			 * innerNameIndex and innerClassAccessFlags are not preserved in the ROM class
+			 * - technically incorrect, but this should only matter to compilers.
+			 */
+			writeU16(0); /* outerClassInfoIndex */
 			writeU16(0); /* innerNameIndex */
 			writeU16(0); /* innerClassAccessFlags */
 		}

@@ -131,6 +131,7 @@ private:
 	void writeFields(Cursor *cursor, bool markAndCountOnly);
 	void writeInterfaces(Cursor *cursor, bool markAndCountOnly);
 	void writeInnerClasses(Cursor *cursor, bool markAndCountOnly);
+	void writeEnclosedInnerClasses(Cursor *cursor, bool markAndCountOnly);
 	void writeNestMembers(Cursor *cursor, bool markAndCountOnly);
 	void writeNameAndSignatureBlock(Cursor *cursor);
 	void writeMethods(Cursor *cursor, Cursor *lineNumberCursor, Cursor *variableInfoCursor, bool markAndCountOnly);
@@ -169,6 +170,7 @@ private:
 	UDATA _fieldsSRPKey;
 	UDATA _cpDescriptionShapeSRPKey;
 	UDATA _innerClassesSRPKey;
+	UDATA _enclosedInnerClassesSRPKey;
 #if JAVA_SPEC_VERSION >= 11
 	UDATA _nestMembersSRPKey;
 #endif /* JAVA_SPEC_VERSION >= 11 */

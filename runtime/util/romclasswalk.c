@@ -138,6 +138,8 @@ void allSlotsInROMClassDo(J9ROMClass* romClass,
 	SLOT_CALLBACK(romClass, J9ROM_U32,  romClass, memberAccessFlags);
 	SLOT_CALLBACK(romClass, J9ROM_U32,  romClass, innerClassCount);
 	SLOT_CALLBACK(romClass, J9ROM_SRP,  romClass, innerClasses);
+	SLOT_CALLBACK(romClass, J9ROM_U32,  romClass, enclosedInnerClassCount);
+	SLOT_CALLBACK(romClass, J9ROM_SRP,  romClass, enclosedInnerClasses);
 #if JAVA_SPEC_VERSION >= 11
 	SLOT_CALLBACK(romClass, J9ROM_UTF8, romClass, nestHost);
 	SLOT_CALLBACK(romClass, J9ROM_U16,  romClass, nestMemberCount);

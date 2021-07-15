@@ -3403,6 +3403,8 @@ typedef struct J9ROMClass {
 	U_32 memberAccessFlags;
 	U_32 innerClassCount;
 	J9SRP innerClasses;
+	U_32 enclosedInnerClassCount;
+	J9SRP enclosedInnerClasses;
 #if JAVA_SPEC_VERSION >= 11
 	J9SRP nestHost;
 	U_16 nestMemberCount;
@@ -3450,6 +3452,7 @@ typedef struct J9ROMClass {
 #define J9ROMCLASS_CPSHAPEDESCRIPTION(base) NNSRP_GET((base)->cpShapeDescription, U_32*)
 #define J9ROMCLASS_OUTERCLASSNAME(base) SRP_GET((base)->outerClassName, struct J9UTF8*)
 #define J9ROMCLASS_INNERCLASSES(base) NNSRP_GET((base)->innerClasses, J9SRP*)
+#define J9ROMCLASS_ENCLOSEDINNERCLASSES(base) NNSRP_GET((base)->enclosedInnerClasses, J9SRP*)
 #if JAVA_SPEC_VERSION >= 11
 #define J9ROMCLASS_NESTHOSTNAME(base) SRP_GET((base)->nestHost, struct J9UTF8*)
 #define J9ROMCLASS_NESTMEMBERS(base) SRP_GET((base)->nestMembers, J9SRP*)
@@ -3484,6 +3487,8 @@ typedef struct J9ROMArrayClass {
 	U_32 memberAccessFlags;
 	U_32 innerClassCount;
 	J9SRP innerClasses;
+	U_32 enclosedInnerClassCount;
+	J9SRP enclosedInnerClasses;
 #if JAVA_SPEC_VERSION >= 11
 	J9SRP nestHost;
 	U_16 nestMemberCount;
@@ -3526,6 +3531,7 @@ typedef struct J9ROMArrayClass {
 #define J9ROMARRAYCLASS_CPSHAPEDESCRIPTION(base) NNSRP_GET((base)->cpShapeDescription, U_32*)
 #define J9ROMARRAYCLASS_OUTERCLASSNAME(base) SRP_GET((base)->outerClassName, struct J9UTF8*)
 #define J9ROMARRAYCLASS_INNERCLASSES(base) NNSRP_GET((base)->innerClasses, J9SRP*)
+#define J9ROMARRAYCLASS_ENCLOSEDINNERCLASSES(base) NNSRP_GET((base)->enclosedInnerClasses, J9SRP*)
 #define J9ROMARRAYCLASS_OPTIONALINFO(base) SRP_GET((base)->optionalInfo, U_32*)
 #define J9ROMARRAYCLASS_CALLSITEDATA(base) SRP_GET((base)->callSiteData, U_8*)
 #define J9ROMARRAYCLASS_STATICSPLITMETHODREFINDEXES(base) SRP_GET((base)->staticSplitMethodRefIndexes, U_16*)
@@ -3556,6 +3562,8 @@ typedef struct J9ROMReflectClass {
 	U_32 memberAccessFlags;
 	U_32 innerClassCount;
 	J9SRP innerClasses;
+	U_32 enclosedInnerClassCount;
+	J9SRP enclosedInnerClasses;
 #if JAVA_SPEC_VERSION >= 11
 	J9SRP nestHost;
 	U_16 nestMemberCount;
@@ -3601,6 +3609,7 @@ typedef struct J9ROMReflectClass {
 #define J9ROMREFLECTCLASS_CPSHAPEDESCRIPTION(base) NNSRP_GET((base)->cpShapeDescription, U_32*)
 #define J9ROMREFLECTCLASS_OUTERCLASSNAME(base) SRP_GET((base)->outerClassName, struct J9UTF8*)
 #define J9ROMREFLECTCLASS_INNERCLASSES(base) NNSRP_GET((base)->innerClasses, J9SRP*)
+#define J9ROMREFLECTCLASS_ENCLOSEDINNERCLASSES(base) NNSRP_GET((base)->enclosedInnerClasses, J9SRP*)
 #define J9ROMREFLECTCLASS_OPTIONALINFO(base) SRP_GET((base)->optionalInfo, U_32*)
 #define J9ROMREFLECTCLASS_CALLSITEDATA(base) SRP_GET((base)->callSiteData, U_8*)
 #define J9ROMREFLECTCLASS_STATICSPLITMETHODREFINDEXES(base) SRP_GET((base)->staticSplitMethodRefIndexes, U_16*)

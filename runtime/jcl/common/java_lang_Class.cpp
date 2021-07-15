@@ -59,6 +59,7 @@ static UDATA isPrivilegedFrameIterator(J9VMThread * currentThread, J9StackWalkSt
 static UDATA isPrivilegedFrameIteratorGetAccSnapshot(J9VMThread * currentThread, J9StackWalkState * walkState);
 static UDATA frameIteratorGetAccSnapshotHelper(J9VMThread * currentThread, J9StackWalkState * walkState, j9object_t acc, j9object_t perm);
 static j9object_t storePDobjectsHelper(J9VMThread* vmThread, J9Class* arrayClass, J9StackWalkState* walkState, j9object_t contextObject, U_32 arraySize, UDATA framesWalked, I_32 startPos, BOOLEAN dupCallerPD);
+static BOOLEAN checkInnerClassAHelper(J9Class* declaringClass, J9Class* declaredClass);
 
 jobject JNICALL 
 Java_java_lang_Class_getDeclaredAnnotationsData(JNIEnv *env, jobject jlClass)
@@ -235,37 +236,83 @@ _throwException:
 jboolean JNICALL
 Java_java_lang_Class_isClassADeclaredClass(JNIEnv *env, jobject jlClass, jobject aClass)
 {
-	jboolean result = JNI_FALSE;
+	J9VMThread *vmThread = (J9VMThread *) env;
 	J9Class *declaringClass = NULL;
 	J9Class *declaredClass = NULL;
-	J9SRP *srpCursor = NULL;
-	U_32 i = 0;
-	U_32 innerClassCount = 0;
-	J9UTF8* declaredClassName = NULL;
-	J9VMThread *vmThread = (J9VMThread *) env;
+	jboolean result = JNI_FALSE;
 
 	enterVMFromJNI(vmThread);
 
 	declaringClass = J9VM_J9CLASS_FROM_HEAPCLASS(vmThread, J9_JNI_UNWRAP_REFERENCE(jlClass));
 	declaredClass = J9VM_J9CLASS_FROM_HEAPCLASS(vmThread, J9_JNI_UNWRAP_REFERENCE(aClass));
 
-	declaredClassName = J9ROMCLASS_CLASSNAME(declaredClass->romClass);
-	innerClassCount = declaringClass->romClass->innerClassCount;
-	srpCursor = J9ROMCLASS_INNERCLASSES(declaringClass->romClass);
-	for ( i=0; i<innerClassCount; i++ ) {
-		J9UTF8 *innerClassName = SRP_PTR_GET(srpCursor, J9UTF8 *);
-		if (compareUTF8Length(J9UTF8_DATA(declaredClassName), J9UTF8_LENGTH(declaredClassName),
-		                      J9UTF8_DATA(innerClassName), J9UTF8_LENGTH(innerClassName)) == 0) {
-			/* aClass' class name matches one of the inner classes of 'this',
-			 * therefore aClass is one of this' declared classes */
-			result = JNI_TRUE;
-			break;
-		}
-		srpCursor ++;
+	if (TRUE == checkInnerClassAHelper(declaringClass, declaredClass)) {
+		result = JNI_TRUE;
 	}
 
 	exitVMToJNI(vmThread);
 	return result;
+}
+
+jboolean JNICALL
+Java_java_lang_Class_isClassAEnclosedClass(JNIEnv *env, jobject jlClass, jobject aClass)
+{
+	J9VMThread *vmThread = (J9VMThread *) env;
+	J9Class *enclosingClass = NULL;
+	U_32 enclosedInnerClassCount = 0;
+	J9Class *enclosedClass = NULL;
+	J9UTF8 *enclosedClassName = NULL;
+	J9SRP *srpCursor = NULL;
+	jboolean result = JNI_FALSE;
+	U_32 i = 0;
+
+	enterVMFromJNI(vmThread);
+
+	enclosingClass = J9VM_J9CLASS_FROM_HEAPCLASS(vmThread, J9_JNI_UNWRAP_REFERENCE(jlClass));
+	enclosedInnerClassCount = enclosingClass->romClass->enclosedInnerClassCount;
+	enclosedClass = J9VM_J9CLASS_FROM_HEAPCLASS(vmThread, J9_JNI_UNWRAP_REFERENCE(aClass));
+	enclosedClassName = J9ROMCLASS_CLASSNAME(enclosedClass->romClass);
+
+	if (TRUE == checkInnerClassAHelper(enclosingClass, enclosedClass)) {
+		result = JNI_TRUE;
+	} else {
+		srpCursor = J9ROMCLASS_ENCLOSEDINNERCLASSES(enclosingClass->romClass);
+		for (i = 0; i < enclosedInnerClassCount; i++) {
+			J9UTF8 *enclosedInnerClassName = SRP_PTR_GET(srpCursor, J9UTF8 *);
+			if (0 == compareUTF8Length(J9UTF8_DATA(enclosedClassName), J9UTF8_LENGTH(enclosedClassName),
+					J9UTF8_DATA(enclosedInnerClassName), J9UTF8_LENGTH(enclosedInnerClassName))) {
+				/* aClass' class name matches one of the enclosed inner classes of 'this',
+				 * therefore aClass is one of this' enclosed classes */
+				result = JNI_TRUE;
+				break;
+			}
+			srpCursor++;
+		}
+	}
+
+	exitVMToJNI(vmThread);
+	return result;
+}
+
+static BOOLEAN
+checkInnerClassAHelper(J9Class* declaringClass, J9Class* declaredClass)
+{
+	U_32 innerClassCount = declaringClass->romClass->innerClassCount;
+	J9SRP *srpCursor = J9ROMCLASS_INNERCLASSES(declaringClass->romClass);
+	J9UTF8* declaredClassName = J9ROMCLASS_CLASSNAME(declaredClass->romClass);
+	U_32 i = 0;
+
+	for (i = 0; i < innerClassCount; i++) {
+		J9UTF8 *innerClassName = SRP_PTR_GET(srpCursor, J9UTF8 *);
+		if (0 == compareUTF8Length(J9UTF8_DATA(declaredClassName), J9UTF8_LENGTH(declaredClassName),
+				J9UTF8_DATA(innerClassName), J9UTF8_LENGTH(innerClassName))) {
+			/* aClass' class name matches one of the inner classes of 'this',
+			 * therefore aClass is one of this' declared classes */
+			return TRUE;
+		}
+		srpCursor++;
+	}
+	return FALSE;
 }
 
 jboolean JNICALL
