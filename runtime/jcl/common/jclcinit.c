@@ -142,7 +142,7 @@ jint computeFullVersionString(J9JavaVM* vm)
 #endif /* VENDOR_SHORT_NAME && VENDOR_SHA */
 
 	if (BUFFER_SIZE <= j9str_printf(PORTLIB, vminfo, BUFFER_SIZE + 1,
-			"JRE %s %s %s-%s %s" JIT_INFO J9VM_VERSION_STRING OMR_INFO VENDOR_INFO OPENJDK_INFO,
+			RUNTIME_INFO " %s %s %s-%s %s" JIT_INFO J9VM_VERSION_STRING OMR_INFO VENDOR_INFO OPENJDK_INFO,
 			j2se_version_info,
 			(NULL != osname ? osname : " "),
 			osarch,

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 1991, 2020 IBM Corp. and others
+ * Copyright (c) 1991, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -394,9 +394,9 @@ j9rasSetServiceLevel(J9JavaVM *vm, const char *runtimeVersion) {
 	PORT_ACCESS_FROM_JAVAVM(vm);
 
 #if JAVA_SPEC_VERSION == 8
-	javaVersion = "JRE 1.8.0";
+	javaVersion = RUNTIME_INFO " 1.8.0";
 #else /* JAVA_SPEC_VERSION == 8 */
-	javaVersion = "JRE " JAVA_SPEC_VERSION_STRING;
+	javaVersion = RUNTIME_INFO " " JAVA_SPEC_VERSION_STRING;
 #endif /* JAVA_SPEC_VERSION == 8 */
 
 	if ((NULL == runtimeVersion) || ('\0' == *runtimeVersion)) {

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2001, 2020 IBM Corp. and others
+ * Copyright (c) 2001, 2021 IBM Corp. and others
  *
  * This program and the accompanying materials are made available under
  * the terms of the Eclipse Public License 2.0 which accompanies this
@@ -531,8 +531,8 @@ public class DDRExtTesterBase extends TestCase {
 			return javaVersion;
 		}
 		String[] coreInfo = getCoreInfo();
-		Pattern versionMatcher = Pattern.compile("JRE\\s+1\\.(\\d+).*"); /* look for JRE 1.n, where "n" is a string of digits */
-		Pattern versionMatcherForJava9 = Pattern.compile("JRE\\s(\\d+).*"); /* look for JRE 9 */
+		Pattern versionMatcher = Pattern.compile("JRE|RUNTIME\\s+1\\.(\\d+).*"); /* look for JRE 1.n, where "n" is a string of digits */
+		Pattern versionMatcherForJava9 = Pattern.compile("JRE|RUNTIME\\s(\\d+).*"); /* look for JRE 9 */
 
 		for (int i = 0; i < (coreInfo.length - 1); ++i) {
 			if (coreInfo[i].matches("JAVA VERSION INFO.*")) {

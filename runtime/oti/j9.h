@@ -335,8 +335,10 @@ static const struct { \
 
 #if defined(OPENJ9_BUILD)
 #define J9_SHARED_CACHE_DEFAULT_BOOT_SHARING(vm) TRUE
+#define RUNTIME_INFO "RUNTIME"
 #else /* defined(OPENJ9_BUILD) */
 #define J9_SHARED_CACHE_DEFAULT_BOOT_SHARING(vm) FALSE
+#define RUNTIME_INFO "JRE"
 #endif /* defined(OPENJ9_BUILD) */
 
 /* Annotation name which indicates that a class is not allowed to be modified by

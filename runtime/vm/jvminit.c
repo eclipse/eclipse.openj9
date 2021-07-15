@@ -1706,11 +1706,11 @@ j9print_internal_version(J9PortLibrary *portLib) {
 
 #if defined(OPENJ9_BUILD)
 #if defined(J9JDK_EXT_VERSION) && defined(J9JDK_EXT_NAME)
-	j9tty_err_printf(PORTLIB, "Eclipse OpenJ9 %s %s-bit Server VM (%s) from %s-%s JRE with %s %s, built on %s %s by %s with %s\n",
+	j9tty_err_printf(PORTLIB, "Eclipse OpenJ9 %s %s-bit Server VM (%s) from %s-%s with %s %s, built on %s %s by %s with %s\n",
 		J9PRODUCT_NAME, J9TARGET_CPU_BITS, J9VERSION_STRING, J9TARGET_OS, J9TARGET_CPU_OSARCH,
 		J9JDK_EXT_NAME, J9JDK_EXT_VERSION,__DATE__, __TIME__, J9USERNAME, J9COMPILER_VERSION_STRING);
 #else
-        j9tty_err_printf(PORTLIB, "Eclipse OpenJ9 %s %s-bit Server VM (%s) from %s-%s JRE, built on %s %s by %s with %s\n",
+        j9tty_err_printf(PORTLIB, "Eclipse OpenJ9 %s %s-bit Server VM (%s) from %s-%s, built on %s %s by %s with %s\n",
                 J9PRODUCT_NAME, J9TARGET_CPU_BITS, J9VERSION_STRING, J9TARGET_OS, J9TARGET_CPU_OSARCH,
                 __DATE__, __TIME__, J9USERNAME, J9COMPILER_VERSION_STRING);
 #endif /* J9JDK_EXT_VERSION && J9JDK_EXT_NAME */
